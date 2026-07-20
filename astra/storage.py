@@ -15,7 +15,7 @@ from uuid import uuid4
 from .domain import InteractionKind, InteractionRequest, ResultReceipt
 
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 def _now() -> str:
@@ -125,6 +125,17 @@ class AstraStore:
                     """
                     UPDATE astra_schema
                     SET version = 2, updated_at = ?
+                    WHERE singleton = 1
+                    """,
+                    (_now(),),
+                )
+                version = 2
+            if version == 2:
+                self._migrate_v2_to_v3(connection)
+                connection.execute(
+                    """
+                    UPDATE astra_schema
+                    SET version = 3, updated_at = ?
                     WHERE singleton = 1
                     """,
                     (_now(),),
@@ -293,6 +304,24 @@ class AstraStore:
         )
 
     @staticmethod
+    def _migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS phase4_execution_results (
+                execution_id TEXT PRIMARY KEY,
+                command_id TEXT NOT NULL UNIQUE,
+                result_hash TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+                FOREIGN KEY(command_id)
+                    REFERENCES phase4_runtime_commands(command_id)
+                    DEFERRABLE INITIALLY DEFERRED
+            )
+            """
+        )
+
+    @staticmethod
     def _validate_schema(connection: sqlite3.Connection) -> None:
         required_tables = {
             "astra_schema",
@@ -305,6 +334,7 @@ class AstraStore:
             "trace_spans",
             "phase4_runtime_commands",
             "phase4_run_requests",
+            "phase4_execution_results",
         }
         rows = connection.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'"

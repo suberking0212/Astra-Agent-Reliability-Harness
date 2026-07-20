@@ -54,6 +54,7 @@ from .round2 import (
 from .governance import (
     AttemptState,
     GovernanceApplicationResult,
+    GovernanceEvaluationResult,
     GovernanceStore,
     RuntimeGovernanceCore,
     validate_governance_round2_fixture,
@@ -101,6 +102,7 @@ __all__ = [
     "Round2Path",
     "Round2ValidationReport",
     "GovernanceApplicationResult",
+    "GovernanceEvaluationResult",
     "GovernanceStore",
     "SubmittedResult",
     "TaskContract",

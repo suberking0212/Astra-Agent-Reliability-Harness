@@ -19,9 +19,17 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import Field
 
+from ..domain import ExecutionResult
 from .approval import ApprovalResolution, verify_approval_binding
 from .canonical import sha256_digest
-from .completion import CompletionValidationResult
+from .completion import (
+    CompletionContract,
+    CompletionValidationResult,
+    EvidenceSnapshot,
+    RequirementEvaluatorRegistry,
+    SubmittedResult,
+    aggregate_completion,
+)
 from .effects import (
     CanonicalEffectRequest,
     ExternalOperation,
@@ -31,10 +39,14 @@ from .facts import FactSource, OutboxMessage, ReliabilityFact
 from .policy import (
     DecisionApplication,
     DecisionApplicationSnapshot,
+    DecisionContext,
+    DecisionPoint,
     PolicyAction,
     PolicyDecision,
     TaskState,
     apply_policy_decision,
+    choose_policy_action,
+    make_policy_decision,
 )
 from .task_contract import FrozenContractModel, SubjectRef, TaskContract
 
@@ -80,6 +92,12 @@ class GovernanceApplicationResult(FrozenContractModel):
     attempt_state: AttemptState
     attempt_version: int = Field(ge=0)
     derived_record_id: str | None = None
+
+
+class GovernanceEvaluationResult(FrozenContractModel):
+    execution_id: str
+    completion_validation: CompletionValidationResult
+    policy_decision: PolicyDecision
 
 
 class GovernanceStore:
@@ -243,6 +261,15 @@ class GovernanceStore:
                 FOREIGN KEY(task_id) REFERENCES phase3_tasks(task_id)
             );
 
+            CREATE TABLE IF NOT EXISTS phase3_completion_contracts (
+                contract_id TEXT NOT NULL,
+                contract_version TEXT NOT NULL,
+                task_type TEXT NOT NULL,
+                contract_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(contract_id, contract_version)
+            );
+
             CREATE TABLE IF NOT EXISTS phase3_policy_decisions (
                 decision_id TEXT PRIMARY KEY,
                 decision_key TEXT NOT NULL UNIQUE,
@@ -302,8 +329,47 @@ class GovernanceStore:
 class RuntimeGovernanceCore:
     """Callable governance component used by the existing Phase 2 Runtime."""
 
-    def __init__(self, store: GovernanceStore) -> None:
+    def __init__(
+        self,
+        store: GovernanceStore,
+        *,
+        evaluator_registry: RequirementEvaluatorRegistry | None = None,
+    ) -> None:
         self.store = store
+        self.evaluator_registry = evaluator_registry or RequirementEvaluatorRegistry()
+
+    def register_completion_contract(self, contract: CompletionContract) -> None:
+        """Persist one immutable, versioned Completion Contract."""
+
+        with self.store.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO phase3_completion_contracts(
+                    contract_id, contract_version, task_type,
+                    contract_json, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(contract_id, contract_version) DO NOTHING
+                """,
+                (
+                    contract.contract_id,
+                    contract.contract_version,
+                    contract.task_type,
+                    contract.model_dump_json(),
+                    _now().isoformat(),
+                ),
+            )
+            existing = connection.execute(
+                """
+                SELECT contract_json FROM phase3_completion_contracts
+                WHERE contract_id = ? AND contract_version = ?
+                """,
+                (contract.contract_id, contract.contract_version),
+            ).fetchone()
+            if (
+                existing is None
+                or CompletionContract.model_validate_json(existing[0]) != contract
+            ):
+                raise ValueError("CompletionContract identity conflict")
 
     def create_task(
         self,
@@ -344,6 +410,305 @@ class RuntimeGovernanceCore:
                 """,
                 (attempt_id, task_id, attempt_version, now),
             )
+
+    def begin_execution(self, *, task_id: str, attempt_id: str) -> None:
+        """Move a claimed initial Task into running under governance authority."""
+
+        with self.store.transaction() as connection:
+            task = connection.execute(
+                "SELECT * FROM phase3_tasks WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            attempt = connection.execute(
+                "SELECT * FROM phase3_attempts WHERE attempt_id = ?",
+                (attempt_id,),
+            ).fetchone()
+            if task is None or attempt is None:
+                raise RuntimeError("Execution references missing authoritative records")
+            if task["current_attempt_id"] != attempt_id:
+                raise RuntimeError("Execution attempt is not current")
+            if attempt["task_id"] != task_id or attempt["state"] != "active":
+                raise RuntimeError("Execution attempt is not active")
+            if task["state"] == TaskState.RUNNING.value:
+                return
+            if task["state"] != TaskState.PENDING.value:
+                raise RuntimeError("Task cannot begin execution from current state")
+            cursor = connection.execute(
+                """
+                UPDATE phase3_tasks
+                SET state = 'running', version = version + 1, updated_at = ?
+                WHERE task_id = ? AND version = ? AND state = 'pending'
+                """,
+                (_now().isoformat(), task_id, task["version"]),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("Task begin-execution CAS failed")
+
+    def evaluate_execution_result(
+        self, execution_id: str
+    ) -> GovernanceEvaluationResult:
+        """Evaluate one persisted ExecutionResult without trusting its status."""
+
+        with self.store.transaction() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    result.result_json,
+                    result.result_hash,
+                    result.created_at AS result_created_at,
+                    execution.task_id,
+                    execution.attempt_id,
+                    task.contract_json,
+                    task.version AS task_version,
+                    task.state AS task_state,
+                    task.current_attempt_id,
+                    attempt.version AS attempt_version,
+                    attempt.state AS attempt_state
+                FROM phase4_execution_results AS result
+                JOIN executions AS execution
+                    ON execution.execution_id = result.execution_id
+                JOIN phase3_tasks AS task ON task.task_id = execution.task_id
+                JOIN phase3_attempts AS attempt
+                    ON attempt.attempt_id = execution.attempt_id
+                WHERE result.execution_id = ?
+                """,
+                (execution_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(execution_id)
+            if row["task_state"] != TaskState.RUNNING.value:
+                raise RuntimeError("Task is not running")
+            if (
+                row["current_attempt_id"] != row["attempt_id"]
+                or row["attempt_state"] != AttemptState.ACTIVE.value
+            ):
+                raise RuntimeError("Execution attempt is not active and current")
+
+            result = ExecutionResult.model_validate_json(row["result_json"])
+            contract = TaskContract.model_validate_json(row["contract_json"])
+            completion_row = connection.execute(
+                """
+                SELECT contract_json FROM phase3_completion_contracts
+                WHERE contract_id = ? AND contract_version = ?
+                """,
+                (
+                    contract.completion_contract_ref.contract_id,
+                    contract.completion_contract_ref.contract_version,
+                ),
+            ).fetchone()
+            if completion_row is None:
+                raise RuntimeError(
+                    "Referenced CompletionContract is not registered"
+                )
+            completion_contract = CompletionContract.model_validate_json(
+                completion_row[0]
+            )
+            if completion_contract.task_type != contract.task_type:
+                raise RuntimeError("CompletionContract task_type mismatch")
+            submitted = SubmittedResult(
+                submitted_result_id="submitted-result:"
+                + sha256_digest(
+                    {
+                        "execution_id": execution_id,
+                        "result_hash": row["result_hash"],
+                    }
+                ),
+                task_id=row["task_id"],
+                attempt_id=row["attempt_id"],
+                execution_id=execution_id,
+                outcome=dict(result.submitted_result or {}),
+                evidence_refs=tuple(
+                    str(value)
+                    for value in (result.result_receipt or {}).get(
+                        "evidence_refs", ()
+                    )
+                ),
+                receipt_refs=tuple(
+                    str(value)
+                    for value in (result.result_receipt or {}).get(
+                        "receipt_refs", ()
+                    )
+                ),
+            )
+            receipt = dict(result.result_receipt or {})
+            receipt_id = receipt.get("receipt_id")
+            referenced_receipts = self._referenced_receipts(
+                connection, execution_id, submitted.receipt_refs
+            )
+            receipt_hashes = {
+                str(item["receipt_id"]): sha256_digest(item)
+                for item in referenced_receipts
+            }
+            if receipt_id:
+                receipt_hashes[str(receipt_id)] = sha256_digest(receipt)
+            receipt_refs = tuple(sorted(receipt_hashes))
+            interaction_refs, pending_interaction_kinds = (
+                self._interaction_snapshot(connection, row["task_id"])
+            )
+            external_operations = self._external_operations(
+                connection, row["task_id"]
+            )
+            fact_watermark = self._fact_watermark(
+                connection, row["task_id"]
+            )
+        snapshot = EvidenceSnapshot.materialize(
+            evidence_snapshot_id="snapshot:"
+            + sha256_digest(
+                {
+                    "execution_id": execution_id,
+                    "result_hash": row["result_hash"],
+                    "task_version": row["task_version"],
+                    "attempt_version": row["attempt_version"],
+                }
+            ),
+            task_id=row["task_id"],
+            attempt_id=row["attempt_id"],
+            task_version=row["task_version"],
+            attempt_version=row["attempt_version"],
+            task_contract_ref=contract.ref,
+            receipt_refs=receipt_refs,
+            receipt_hashes=receipt_hashes,
+            interaction_refs=interaction_refs,
+            external_operations=external_operations,
+            fact_watermark=fact_watermark,
+            collector_version="phase4.single_worker.v1",
+            created_at=datetime.fromisoformat(
+                str(row["result_created_at"]).replace("Z", "+00:00")
+            ),
+        )
+        evaluations = tuple(
+            self.evaluator_registry.evaluate(requirement, submitted, snapshot)
+            for requirement in completion_contract.requirements
+        )
+        completion = aggregate_completion(
+            completion_contract,
+            submitted,
+            snapshot,
+            evaluations,
+        )
+        operation_status = next(
+            (
+                operation.status
+                for operation in snapshot.external_operations
+                if operation.status == ExternalOperationStatus.INDETERMINATE
+            ),
+            None,
+        )
+        action, reason_code = choose_policy_action(
+            input_complete=(
+                result.submitted_result is not None
+                and "user_input" not in pending_interaction_kinds
+            ),
+            approval_required="approval" in pending_interaction_kinds,
+            approval_matched="approval" not in pending_interaction_kinds,
+            external_operation_status=operation_status,
+            completion_status=completion.status,
+        )
+        context = DecisionContext.materialize(
+            decision_context_id="context:" + snapshot.evidence_snapshot_id,
+            decision_point=DecisionPoint.COMPLETION_VALIDATED,
+            trigger_id=completion.completion_validation_id,
+            task_id=row["task_id"],
+            task_version=row["task_version"],
+            task_contract_ref=contract.ref,
+            attempt_id=row["attempt_id"],
+            attempt_version=row["attempt_version"],
+            evidence_snapshot_id=snapshot.evidence_snapshot_id,
+            fact_watermark=snapshot.fact_watermark,
+            completion_validation_id=completion.completion_validation_id,
+            interaction_snapshot_version=max(interaction_refs.values(), default=0),
+        )
+        decision = make_policy_decision(
+            context,
+            action=action,
+            reason_code=reason_code,
+            evaluation_refs=tuple(
+                evaluation.evaluation_id for evaluation in evaluations
+            ),
+        )
+        self.record_completion_validation(row["task_id"], completion)
+        self.record_policy_decision(decision)
+        return GovernanceEvaluationResult(
+            execution_id=execution_id,
+            completion_validation=completion,
+            policy_decision=decision,
+        )
+
+    def evaluate(self, execution_id: str) -> GovernanceEvaluationResult:
+        """Short callable surface used by the Phase 4 worker."""
+
+        return self.evaluate_execution_result(execution_id)
+
+    def apply(self, decision_id: str) -> GovernanceApplicationResult:
+        """Apply a previously persisted governance decision."""
+
+        return self.apply_decision(decision_id)
+
+    @staticmethod
+    def _fact_watermark(
+        connection: sqlite3.Connection, task_id: str
+    ) -> int:
+        row = connection.execute(
+            """
+            SELECT COALESCE(MAX(sequence), 0)
+            FROM phase3_reliability_facts WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    @staticmethod
+    def _referenced_receipts(
+        connection: sqlite3.Connection,
+        execution_id: str,
+        receipt_refs: tuple[str, ...],
+    ) -> tuple[Mapping[str, Any], ...]:
+        if not receipt_refs:
+            return ()
+        placeholders = ",".join("?" for _ in receipt_refs)
+        rows = connection.execute(
+            f"""
+            SELECT * FROM execution_receipts
+            WHERE execution_id = ?
+                AND receipt_id IN ({placeholders})
+            ORDER BY receipt_id
+            """,
+            (execution_id, *receipt_refs),
+        ).fetchall()
+        return tuple(dict(row) for row in rows)
+
+    @staticmethod
+    def _external_operations(
+        connection: sqlite3.Connection, task_id: str
+    ) -> tuple[ExternalOperation, ...]:
+        rows = connection.execute(
+            """
+            SELECT operation_json FROM phase3_external_operations
+            WHERE task_id = ? ORDER BY operation_id
+            """,
+            (task_id,),
+        ).fetchall()
+        return tuple(
+            ExternalOperation.model_validate_json(row[0]) for row in rows
+        )
+
+    @staticmethod
+    def _interaction_snapshot(
+        connection: sqlite3.Connection, task_id: str
+    ) -> tuple[dict[str, int], frozenset[str]]:
+        rows = connection.execute(
+            """
+            SELECT interaction_id, kind, status, version
+            FROM phase3_interactions
+            WHERE task_id = ? ORDER BY interaction_id
+            """,
+            (task_id,),
+        ).fetchall()
+        return (
+            {str(row["interaction_id"]): int(row["version"]) for row in rows},
+            frozenset(
+                str(row["kind"]) for row in rows if row["status"] == "pending"
+            ),
+        )
 
     def record_approval_resolution(
         self, task_id: str, resolution: ApprovalResolution
