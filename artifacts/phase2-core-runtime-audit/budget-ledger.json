@@ -1,0 +1,9 @@
+{
+  "estimated_cost_usd": 0.0,
+  "execution_id": "exec-phase2-core-baseline",
+  "observed_input_tokens": 150,
+  "observed_output_tokens": 50,
+  "observed_total_tokens": 200,
+  "provider_request_count": 5,
+  "reserved_next_call_tokens": 0
+}

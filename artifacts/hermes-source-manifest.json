@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "repository": "NousResearch/hermes-agent",
+  "declared_version": "0.18.2",
+  "commit_sha": null,
+  "source_directory": "hermes-agent-main",
+  "archive_path": "artifacts/hermes-source-snapshot-0.18.2.tar.gz",
+  "archive_format": "deterministic tar.gz",
+  "archive_sha256": "200a11f1bfe275b77cf69882ed603cb1e0144153de8524b2283310d981529e3b",
+  "source_tree_sha256": "95239075bca612240d6f76ceae9b3d2d07ea7209de671641f2e89c5e09d4426e",
+  "source_tree_file_count": 6618,
+  "source_tree_total_file_bytes": 145526603,
+  "python_version": "3.13.11",
+  "compatibility_tests": {
+    "passed": 158,
+    "failed": 0
+  },
+  "hash_specification": {
+    "source_tree": "sha256 over sorted records: directory=D\\0<path>\\0<mode>\\n; file=F\\0<path>\\0<mode>\\0<size>\\0<content_sha256>\\n; symlink=L\\0<path>\\0<target>\\n",
+    "archive": "tar.gz with lexicographic POSIX paths, gzip mtime=0, tar mtime=0, uid/gid=0, empty uname/gname, and preserved permission bits"
+  },
+  "excluded_local_artifacts": {
+    "directory_names": [
+      ".git",
+      ".mypy_cache",
+      ".pytest_cache",
+      ".ruff_cache",
+      ".venv",
+      "__pycache__",
+      "node_modules",
+      "venv"
+    ],
+    "directory_suffixes": [
+      ".egg-info"
+    ],
+    "file_names": [
+      ".DS_Store",
+      "test_durations.json"
+    ],
+    "file_suffixes": [
+      ".pyc",
+      ".pyo"
+    ]
+  }
+}

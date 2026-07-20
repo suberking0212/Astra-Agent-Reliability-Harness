@@ -1,0 +1,394 @@
+[
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ExecutionStarted",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {},
+    "source": "hermes_executor_adapter",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:35.770856Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCallStarted",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "api_call_count": 1
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.827062Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCall",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "usage": {
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "input_tokens": 30,
+        "output_tokens": 10,
+        "prompt_tokens": 30,
+        "reasoning_tokens": 0,
+        "request_count": 1,
+        "total_tokens": 40
+      }
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.834503Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ToolCall",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "arguments": {
+        "order_id": "order-001"
+      },
+      "tool_name": "get_order"
+    },
+    "source": "hermes_bridge_plugin",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.839191Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ToolResult",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "error": null,
+      "ok": true,
+      "receipt_id": "4d1a21de-a278-405f-86ef-d844fb3a089f",
+      "tool_name": "get_order"
+    },
+    "source": "astra_tool_gateway",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.839651Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "HermesToolCallFinished",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "error_type": null,
+      "status": "ok",
+      "tool_name": "get_order"
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.840030Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCallStarted",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "api_call_count": 2
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.841461Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCall",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "usage": {
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "input_tokens": 30,
+        "output_tokens": 10,
+        "prompt_tokens": 30,
+        "reasoning_tokens": 0,
+        "request_count": 1,
+        "total_tokens": 40
+      }
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.844206Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ToolCall",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "arguments": {
+        "query": "damaged goods return window exception"
+      },
+      "tool_name": "search_policy"
+    },
+    "source": "hermes_bridge_plugin",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.844949Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ToolResult",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "error": null,
+      "ok": true,
+      "receipt_id": "05025088-96fb-4da0-b728-11ebf02ed3a7",
+      "tool_name": "search_policy"
+    },
+    "source": "astra_tool_gateway",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.845252Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "HermesToolCallFinished",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "error_type": null,
+      "status": "ok",
+      "tool_name": "search_policy"
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.845437Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCallStarted",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "api_call_count": 3
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.846561Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCall",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "usage": {
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "input_tokens": 30,
+        "output_tokens": 10,
+        "prompt_tokens": 30,
+        "reasoning_tokens": 0,
+        "request_count": 1,
+        "total_tokens": 40
+      }
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.848875Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ToolCall",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "arguments": {
+        "customer_id": "cust-001",
+        "order_id": "order-001",
+        "reason": "item damaged in transit",
+        "resolution": "create complaint for exception review"
+      },
+      "tool_name": "create_complaint_ticket"
+    },
+    "source": "hermes_bridge_plugin",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.849400Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ToolResult",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "error": null,
+      "ok": true,
+      "receipt_id": "44f4933a-310a-493a-b73c-57426dd39057",
+      "tool_name": "create_complaint_ticket"
+    },
+    "source": "astra_tool_gateway",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.849702Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "HermesToolCallFinished",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "error_type": null,
+      "status": "ok",
+      "tool_name": "create_complaint_ticket"
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.849797Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCallStarted",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "api_call_count": 4
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.851691Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCall",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "usage": {
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "input_tokens": 30,
+        "output_tokens": 10,
+        "prompt_tokens": 30,
+        "reasoning_tokens": 0,
+        "request_count": 1,
+        "total_tokens": 40
+      }
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.855308Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ResultSubmission",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "evidence_refs": [
+        "4d1a21de-a278-405f-86ef-d844fb3a089f",
+        "05025088-96fb-4da0-b728-11ebf02ed3a7",
+        "44f4933a-310a-493a-b73c-57426dd39057"
+      ],
+      "outcome": {
+        "customer_id": "cust-001",
+        "order_id": "order-001",
+        "resolution": "complaint_created",
+        "ticket_id": "ticket-dc49d3b1085c"
+      },
+      "receipt_refs": [
+        "4d1a21de-a278-405f-86ef-d844fb3a089f",
+        "05025088-96fb-4da0-b728-11ebf02ed3a7",
+        "44f4933a-310a-493a-b73c-57426dd39057"
+      ]
+    },
+    "source": "hermes_bridge_plugin",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.855885Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ResultValidation",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "checks": {
+        "complaint_ticket_exists": true,
+        "complaint_ticket_matches_outcome": true,
+        "create_ticket_receipt_present": true,
+        "evidence_refs_backed_by_receipts": true,
+        "no_unresolved_interaction": true,
+        "receipt_refs_complete": true,
+        "receipt_refs_owned_by_execution": true
+      },
+      "errors": [],
+      "evidence_refs": [
+        "4d1a21de-a278-405f-86ef-d844fb3a089f",
+        "05025088-96fb-4da0-b728-11ebf02ed3a7",
+        "44f4933a-310a-493a-b73c-57426dd39057"
+      ],
+      "execution_id": "exec-phase2-core-baseline",
+      "outcome": {
+        "customer_id": "cust-001",
+        "order_id": "order-001",
+        "resolution": "complaint_created",
+        "ticket_id": "ticket-dc49d3b1085c"
+      },
+      "receipt_id": "94685fcf-1104-411f-bd6c-86d2215e2ec6",
+      "receipt_refs": [
+        "4d1a21de-a278-405f-86ef-d844fb3a089f",
+        "05025088-96fb-4da0-b728-11ebf02ed3a7",
+        "44f4933a-310a-493a-b73c-57426dd39057"
+      ],
+      "task_id": "task-phase2-core-baseline",
+      "valid": true
+    },
+    "source": "minimal_result_validator",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.856457Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "HermesToolCallFinished",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "error_type": null,
+      "status": "ok",
+      "tool_name": "submit_task_result"
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.856551Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCallStarted",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "api_call_count": 5
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.857701Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ProviderCall",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "usage": {
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "input_tokens": 30,
+        "output_tokens": 10,
+        "prompt_tokens": 30,
+        "reasoning_tokens": 0,
+        "request_count": 1,
+        "total_tokens": 40
+      }
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.887341Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "AgentTurnOutput",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "has_output": true
+    },
+    "source": "hermes_observer",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.891626Z"
+  },
+  {
+    "attempt_id": "attempt-phase2-core-baseline",
+    "event_type": "ExecutionEnded",
+    "execution_id": "exec-phase2-core-baseline",
+    "payload": {
+      "status": "succeeded",
+      "termination_reason": "task_outcome_validated"
+    },
+    "source": "hermes_executor_adapter",
+    "task_id": "task-phase2-core-baseline",
+    "timestamp": "2026-07-19T09:54:39.892414Z"
+  }
+]

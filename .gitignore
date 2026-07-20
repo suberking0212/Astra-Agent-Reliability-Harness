@@ -1,0 +1,10 @@
+.DS_Store
+.hermes/
+.pytest_cache/
+.ruff_cache/
+**/__pycache__/
+*.py[cod]
+
+# Upstream Hermes source is an external reference snapshot, not Astra source.
+hermes-agent-main/
+

@@ -1,0 +1,89 @@
+{
+  "integrity_check": "ok",
+  "message_count": 10,
+  "messages": [
+    {
+      "finish_reason": null,
+      "role": "user",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": null,
+      "tool_name": null
+    },
+    {
+      "finish_reason": "tool_calls",
+      "role": "assistant",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": null,
+      "tool_name": null
+    },
+    {
+      "finish_reason": null,
+      "role": "tool",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": "audit-order",
+      "tool_name": "get_order"
+    },
+    {
+      "finish_reason": "tool_calls",
+      "role": "assistant",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": null,
+      "tool_name": null
+    },
+    {
+      "finish_reason": null,
+      "role": "tool",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": "audit-policy",
+      "tool_name": "search_policy"
+    },
+    {
+      "finish_reason": "tool_calls",
+      "role": "assistant",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": null,
+      "tool_name": null
+    },
+    {
+      "finish_reason": null,
+      "role": "tool",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": "audit-ticket",
+      "tool_name": "create_complaint_ticket"
+    },
+    {
+      "finish_reason": "tool_calls",
+      "role": "assistant",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": null,
+      "tool_name": null
+    },
+    {
+      "finish_reason": null,
+      "role": "tool",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": "audit-submit",
+      "tool_name": "submit_task_result"
+    },
+    {
+      "finish_reason": "stop",
+      "role": "assistant",
+      "session_id": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+      "tool_call_id": null,
+      "tool_name": null
+    }
+  ],
+  "roles": [
+    "user",
+    "assistant",
+    "tool",
+    "assistant",
+    "tool",
+    "assistant",
+    "tool",
+    "assistant",
+    "tool",
+    "assistant"
+  ],
+  "session_count": 1
+}

@@ -1,0 +1,14 @@
+{
+  "complaint_tickets": [
+    {
+      "created_at": "2026-07-19T09:54:39.849545+00:00",
+      "customer_id": "cust-001",
+      "idempotency_key": "phase2-core-baseline-ticket",
+      "order_id": "order-001",
+      "reason": "item damaged in transit",
+      "resolution": "create complaint for exception review",
+      "status": "open",
+      "ticket_id": "ticket-dc49d3b1085c"
+    }
+  ]
+}

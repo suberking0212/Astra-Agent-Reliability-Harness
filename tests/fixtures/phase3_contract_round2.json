@@ -1,0 +1,220 @@
+{
+  "fixture_schema_version": "1",
+  "paths": {
+    "success": {
+      "input_complete": true,
+      "approval_status": "approved",
+      "operation_status": "confirmed",
+      "expected_evaluation": "satisfied",
+      "expected_policy_action": "complete",
+      "current_task_version_offset": 0,
+      "expected_application": "applied"
+    },
+    "missing_input": {
+      "input_complete": false,
+      "approval_status": "not_requested",
+      "operation_status": "not_started",
+      "expected_evaluation": "unknown",
+      "expected_policy_action": "request_input",
+      "current_task_version_offset": 0,
+      "expected_application": "applied"
+    },
+    "approval_required": {
+      "input_complete": true,
+      "approval_status": "missing",
+      "operation_status": "not_started",
+      "expected_evaluation": "unknown",
+      "expected_policy_action": "request_approval",
+      "current_task_version_offset": 0,
+      "expected_application": "applied"
+    },
+    "response_lost_indeterminate": {
+      "input_complete": true,
+      "approval_status": "approved",
+      "operation_status": "indeterminate",
+      "expected_evaluation": "unknown",
+      "expected_policy_action": "reconcile",
+      "current_task_version_offset": 0,
+      "expected_application": "applied"
+    },
+    "stale_decision": {
+      "input_complete": true,
+      "approval_status": "approved",
+      "operation_status": "confirmed",
+      "expected_evaluation": "satisfied",
+      "expected_policy_action": "complete",
+      "current_task_version_offset": 1,
+      "expected_application": "stale"
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": "customer_complaint",
+      "task_contract": {
+        "schema_version": "1",
+        "contract_id": "contract-complaint-001",
+        "contract_version": "1",
+        "contract_hash": "@computed",
+        "task_type": "complaint_resolution",
+        "execution_type": "tool_execution",
+        "objective": {"description": "Resolve the damaged order complaint and persist the approved remedy."},
+        "subject_refs": [{"authority_domain": "commerce.mock", "type": "order", "id": "order-001"}],
+        "input_snapshot": {"schema_id": "complaint.request", "schema_version": "1", "values": {"customer_id": "cust-001", "reason": "damaged"}, "content_hash": "sha256:fixture-complaint-input"},
+        "allowed_capabilities": [{"capability_id": "complaints.write", "capability_version": "1"}],
+        "resolved_tools": [{"tool_name": "resolve_complaint", "tool_version": "1", "schema_hash": "sha256:fixture-complaint-tool", "capability_ref": "complaints.write@1", "access_mode": "effect"}],
+        "constraints": [{"constraint_id": "complaint.order_scope", "constraint_version": "1", "kind": "subject_scope", "enforcement_point": "tool_gateway", "configuration": {"order_id": "order-001"}}],
+        "authorized_effects": [{"effect_intent_id": "complaint-remedy-once", "effect_type": "support.complaint_remedy", "effect_type_version": "1", "authority_domain": "support.mock", "subject_ref": {"authority_domain": "commerce.mock", "type": "order", "id": "order-001"}, "parameter_constraints": {"customer_id": "cust-001", "resolution": "refund"}, "max_confirmed_occurrences": 1, "approval_requirement_ref": "complaint-refund-approval@1"}],
+        "approval_requirements": [{"approval_requirement_id": "complaint-refund-approval", "approval_requirement_version": "1", "effect_intent_refs": ["complaint-remedy-once"], "risk_class": "high", "approver_policy_ref": "support.supervisor@1", "usage_semantics": "single_effect_single_use"}],
+        "completion_contract_ref": {"contract_id": "completion-complaint", "contract_version": "1"},
+        "limits": {"max_attempts": 3, "task_deadline": "2026-07-21T00:00:00Z", "max_executions_per_attempt": 4, "max_feedback_cycles": 2, "max_reconcile_cycles": 3}
+      },
+      "normalizer": {"normalizer_id": "complaint.remedy", "normalizer_version": "1"},
+      "raw_effect_request": {"customer_id": "cust-001", "resolution": "refund"},
+      "normalized_parameters": {"customer_id": "cust-001", "resolution": "refund"}
+    },
+    {
+      "scenario_id": "refund_approval",
+      "task_contract": {
+        "schema_version": "1",
+        "contract_id": "contract-refund-o123",
+        "contract_version": "1",
+        "contract_hash": "@computed",
+        "task_type": "refund_resolution",
+        "execution_type": "approval_required",
+        "objective": {"description": "Issue the approved refund exactly once."},
+        "subject_refs": [{"authority_domain": "commerce.mock", "type": "order", "id": "O123"}],
+        "input_snapshot": {"schema_id": "refund.request", "schema_version": "1", "values": {"amount_minor": 50000, "currency": "CNY"}, "content_hash": "sha256:fixture-refund-input"},
+        "allowed_capabilities": [{"capability_id": "refunds.issue", "capability_version": "1"}],
+        "resolved_tools": [{"tool_name": "issue_refund", "tool_version": "1", "schema_hash": "sha256:fixture-refund-tool", "capability_ref": "refunds.issue@1", "access_mode": "effect"}],
+        "constraints": [{"constraint_id": "refund.exact_amount", "constraint_version": "1", "kind": "parameter_scope", "enforcement_point": "tool_gateway", "configuration": {"amount_minor": 50000, "currency": "CNY"}}],
+        "authorized_effects": [{"effect_intent_id": "refund-o123-once", "effect_type": "finance.refund", "effect_type_version": "1", "authority_domain": "payments.mock/merchant-main", "subject_ref": {"authority_domain": "commerce.mock", "type": "order", "id": "O123"}, "parameter_constraints": {"amount_minor": 50000, "currency": "CNY", "destination": "original_payment_method"}, "max_confirmed_occurrences": 1, "approval_requirement_ref": "refund-over-threshold@1"}],
+        "approval_requirements": [{"approval_requirement_id": "refund-over-threshold", "approval_requirement_version": "1", "effect_intent_refs": ["refund-o123-once"], "risk_class": "high", "approver_policy_ref": "finance.manager@1", "usage_semantics": "single_effect_single_use"}],
+        "completion_contract_ref": {"contract_id": "completion-refund", "contract_version": "1"},
+        "limits": {"max_attempts": 3, "task_deadline": "2026-07-21T00:00:00Z", "max_executions_per_attempt": 4, "max_feedback_cycles": 2, "max_reconcile_cycles": 3}
+      },
+      "normalizer": {"normalizer_id": "refund.request", "normalizer_version": "1"},
+      "raw_effect_request": {"amount": "500.00", "currency": "cny", "destination": "original_payment_method"},
+      "normalized_parameters": {"amount_minor": 50000, "currency": "CNY", "destination": "original_payment_method"}
+    },
+    {
+      "scenario_id": "jira_issue",
+      "task_contract": {
+        "schema_version": "1",
+        "contract_id": "contract-jira-customer-001",
+        "contract_version": "1",
+        "contract_hash": "@computed",
+        "task_type": "jira_issue_creation",
+        "execution_type": "tool_execution",
+        "objective": {"description": "Create one approved Jira issue in project SUPPORT."},
+        "subject_refs": [{"authority_domain": "crm.mock", "type": "customer", "id": "cust-001"}],
+        "input_snapshot": {"schema_id": "jira.issue.request", "schema_version": "1", "values": {"project": "SUPPORT", "issue_type": "Bug"}, "content_hash": "sha256:fixture-jira-input"},
+        "allowed_capabilities": [{"capability_id": "jira.issues.create", "capability_version": "1"}],
+        "resolved_tools": [{"tool_name": "jira_create_issue", "tool_version": "1", "schema_hash": "sha256:fixture-jira-tool", "capability_ref": "jira.issues.create@1", "access_mode": "effect"}],
+        "constraints": [{"constraint_id": "jira.project_scope", "constraint_version": "1", "kind": "parameter_scope", "enforcement_point": "tool_gateway", "configuration": {"project": "SUPPORT", "issue_type": "Bug"}}],
+        "authorized_effects": [{"effect_intent_id": "jira-support-issue-once", "effect_type": "work_tracking.issue_create", "effect_type_version": "1", "authority_domain": "jira.mock/site-main", "subject_ref": {"authority_domain": "crm.mock", "type": "customer", "id": "cust-001"}, "parameter_constraints": {"project": "SUPPORT", "issue_type": "Bug", "priority": "High"}, "max_confirmed_occurrences": 1, "approval_requirement_ref": "jira-sensitive-project@1"}],
+        "approval_requirements": [{"approval_requirement_id": "jira-sensitive-project", "approval_requirement_version": "1", "effect_intent_refs": ["jira-support-issue-once"], "risk_class": "medium", "approver_policy_ref": "support.lead@1", "usage_semantics": "single_effect_single_use"}],
+        "completion_contract_ref": {"contract_id": "completion-jira", "contract_version": "1"},
+        "limits": {"max_attempts": 3, "task_deadline": "2026-07-21T00:00:00Z", "max_executions_per_attempt": 4, "max_feedback_cycles": 2, "max_reconcile_cycles": 3}
+      },
+      "normalizer": {"normalizer_id": "jira.issue_create", "normalizer_version": "1"},
+      "raw_effect_request": {"project": "support", "issue_type": "Bug", "priority": "high"},
+      "normalized_parameters": {"issue_type": "Bug", "priority": "High", "project": "SUPPORT"}
+    },
+    {
+      "scenario_id": "crm_customer_update",
+      "task_contract": {
+        "schema_version": "1",
+        "contract_id": "contract-crm-cust-001",
+        "contract_version": "1",
+        "contract_hash": "@computed",
+        "task_type": "crm_customer_update",
+        "execution_type": "tool_execution",
+        "objective": {"description": "Update only the approved phone and address fields."},
+        "subject_refs": [{"authority_domain": "crm.mock", "type": "customer", "id": "cust-001", "version": "17"}],
+        "input_snapshot": {"schema_id": "crm.customer.patch", "schema_version": "1", "values": {"phone": "+8613800000000", "city": "Shanghai"}, "content_hash": "sha256:fixture-crm-input"},
+        "allowed_capabilities": [{"capability_id": "crm.customers.patch", "capability_version": "1"}],
+        "resolved_tools": [{"tool_name": "crm_patch_customer", "tool_version": "1", "schema_hash": "sha256:fixture-crm-tool", "capability_ref": "crm.customers.patch@1", "access_mode": "effect"}],
+        "constraints": [{"constraint_id": "crm.allowed_fields", "constraint_version": "1", "kind": "field_scope", "enforcement_point": "tool_gateway", "configuration": {"allowed": ["phone", "city"], "forbidden": ["credit_tier", "owner", "marketing_consent"]}}],
+        "authorized_effects": [{"effect_intent_id": "crm-contact-update-once", "effect_type": "crm.customer_patch", "effect_type_version": "1", "authority_domain": "crm.mock", "subject_ref": {"authority_domain": "crm.mock", "type": "customer", "id": "cust-001", "version": "17"}, "parameter_constraints": {"phone": "+8613800000000", "city": "Shanghai", "expected_version": "17"}, "max_confirmed_occurrences": 1, "approval_requirement_ref": "crm-pii-change@1"}],
+        "approval_requirements": [{"approval_requirement_id": "crm-pii-change", "approval_requirement_version": "1", "effect_intent_refs": ["crm-contact-update-once"], "risk_class": "medium", "approver_policy_ref": "crm.data-steward@1", "usage_semantics": "single_effect_single_use"}],
+        "completion_contract_ref": {"contract_id": "completion-crm", "contract_version": "1"},
+        "limits": {"max_attempts": 3, "task_deadline": "2026-07-21T00:00:00Z", "max_executions_per_attempt": 4, "max_feedback_cycles": 2, "max_reconcile_cycles": 3}
+      },
+      "normalizer": {"normalizer_id": "crm.customer_patch", "normalizer_version": "1"},
+      "raw_effect_request": {"city": "Shanghai", "phone": "+86 138 0000 0000", "expected_version": 17},
+      "normalized_parameters": {"city": "Shanghai", "expected_version": "17", "phone": "+8613800000000"}
+    },
+    {
+      "scenario_id": "procurement_approval",
+      "task_contract": {
+        "schema_version": "1",
+        "contract_id": "contract-procurement-001",
+        "contract_version": "1",
+        "contract_hash": "@computed",
+        "task_type": "procurement_request",
+        "execution_type": "approval_required",
+        "objective": {"description": "Submit the approved purchase requisition once."},
+        "subject_refs": [{"authority_domain": "procurement.mock", "type": "cost_center", "id": "CC-100"}],
+        "input_snapshot": {"schema_id": "procurement.requisition", "schema_version": "1", "values": {"vendor_id": "V-9", "amount_minor": 1200000, "currency": "CNY"}, "content_hash": "sha256:fixture-procurement-input"},
+        "allowed_capabilities": [{"capability_id": "procurement.requisitions.create", "capability_version": "1"}],
+        "resolved_tools": [{"tool_name": "create_purchase_requisition", "tool_version": "1", "schema_hash": "sha256:fixture-procurement-tool", "capability_ref": "procurement.requisitions.create@1", "access_mode": "effect"}],
+        "constraints": [{"constraint_id": "procurement.cost-center-scope", "constraint_version": "1", "kind": "parameter_scope", "enforcement_point": "tool_gateway", "configuration": {"cost_center": "CC-100", "vendor_id": "V-9"}}],
+        "authorized_effects": [{"effect_intent_id": "requisition-cc100-once", "effect_type": "procurement.requisition_create", "effect_type_version": "1", "authority_domain": "procurement.mock", "subject_ref": {"authority_domain": "procurement.mock", "type": "cost_center", "id": "CC-100"}, "parameter_constraints": {"vendor_id": "V-9", "amount_minor": 1200000, "currency": "CNY"}, "max_confirmed_occurrences": 1, "approval_requirement_ref": "procurement-budget-owner@1"}],
+        "approval_requirements": [{"approval_requirement_id": "procurement-budget-owner", "approval_requirement_version": "1", "effect_intent_refs": ["requisition-cc100-once"], "risk_class": "high", "approver_policy_ref": "procurement.budget-owner@1", "usage_semantics": "single_effect_single_use"}],
+        "completion_contract_ref": {"contract_id": "completion-procurement", "contract_version": "1"},
+        "limits": {"max_attempts": 3, "task_deadline": "2026-07-22T00:00:00Z", "max_executions_per_attempt": 4, "max_feedback_cycles": 2, "max_reconcile_cycles": 5}
+      },
+      "normalizer": {"normalizer_id": "procurement.requisition", "normalizer_version": "1"},
+      "raw_effect_request": {"vendor_id": "V-9", "amount": "12000.00", "currency": "cny"},
+      "normalized_parameters": {"amount_minor": 1200000, "currency": "CNY", "vendor_id": "V-9"}
+    },
+    {
+      "scenario_id": "email_send",
+      "task_contract": {
+        "schema_version": "1",
+        "contract_id": "contract-email-cust-001",
+        "contract_version": "1",
+        "contract_hash": "@computed",
+        "task_type": "email_send",
+        "execution_type": "approval_required",
+        "objective": {"description": "Send one approved complaint-resolution email to the exact recipient."},
+        "subject_refs": [{"authority_domain": "crm.mock", "type": "customer", "id": "cust-001"}],
+        "input_snapshot": {"schema_id": "mail.message", "schema_version": "1", "values": {"to": ["customer@example.com"], "purpose": "complaint_resolution"}, "content_hash": "sha256:fixture-email-input"},
+        "allowed_capabilities": [{"capability_id": "mail.messages.send", "capability_version": "1"}],
+        "resolved_tools": [{"tool_name": "send_email", "tool_version": "1", "schema_hash": "sha256:fixture-email-tool", "capability_ref": "mail.messages.send@1", "access_mode": "effect"}],
+        "constraints": [{"constraint_id": "mail.recipient-scope", "constraint_version": "1", "kind": "parameter_scope", "enforcement_point": "tool_gateway", "configuration": {"to": ["customer@example.com"], "cc": [], "attachments": []}}],
+        "authorized_effects": [{"effect_intent_id": "resolution-email-once", "effect_type": "communication.email_send", "effect_type_version": "1", "authority_domain": "mail.mock/account-support", "subject_ref": {"authority_domain": "crm.mock", "type": "customer", "id": "cust-001"}, "parameter_constraints": {"to": ["customer@example.com"], "cc": [], "subject": "Complaint resolution", "body_hash": "sha256:fixture-body", "attachments": []}, "max_confirmed_occurrences": 1, "approval_requirement_ref": "mail-external-send@1"}],
+        "approval_requirements": [{"approval_requirement_id": "mail-external-send", "approval_requirement_version": "1", "effect_intent_refs": ["resolution-email-once"], "risk_class": "medium", "approver_policy_ref": "communications.sender@1", "usage_semantics": "single_effect_single_use"}],
+        "completion_contract_ref": {"contract_id": "completion-email-accepted", "contract_version": "1"},
+        "limits": {"max_attempts": 3, "task_deadline": "2026-07-21T00:00:00Z", "max_executions_per_attempt": 4, "max_feedback_cycles": 2, "max_reconcile_cycles": 3}
+      },
+      "normalizer": {"normalizer_id": "mail.message_send", "normalizer_version": "1"},
+      "raw_effect_request": {"to": "Customer@Example.com", "subject": "Complaint resolution", "body_hash": "sha256:fixture-body"},
+      "normalized_parameters": {"attachments": [], "body_hash": "sha256:fixture-body", "cc": [], "subject": "Complaint resolution", "to": ["customer@example.com"]}
+    },
+    {
+      "scenario_id": "browser_form_submit",
+      "task_contract": {
+        "schema_version": "1",
+        "contract_id": "contract-browser-form-001",
+        "contract_version": "1",
+        "contract_hash": "@computed",
+        "task_type": "browser_form_submission",
+        "execution_type": "approval_required",
+        "objective": {"description": "Submit the approved application form to the exact origin."},
+        "subject_refs": [{"authority_domain": "forms.mock", "type": "application", "id": "draft-001"}],
+        "input_snapshot": {"schema_id": "browser.form.application", "schema_version": "1", "values": {"origin": "https://forms.example", "form_id": "benefit-2026"}, "content_hash": "sha256:fixture-browser-input"},
+        "allowed_capabilities": [{"capability_id": "browser.forms.submit", "capability_version": "1"}],
+        "resolved_tools": [{"tool_name": "browser_submit_form", "tool_version": "1", "schema_hash": "sha256:fixture-browser-tool", "capability_ref": "browser.forms.submit@1", "access_mode": "effect"}],
+        "constraints": [{"constraint_id": "browser.origin-and-field-scope", "constraint_version": "1", "kind": "parameter_scope", "enforcement_point": "tool_gateway", "configuration": {"origin": "https://forms.example", "form_id": "benefit-2026", "allowed_fields": ["name", "customer_id", "claim_type"]}}],
+        "authorized_effects": [{"effect_intent_id": "form-benefit-submit-once", "effect_type": "browser.form_submit", "effect_type_version": "1", "authority_domain": "forms.mock", "subject_ref": {"authority_domain": "forms.mock", "type": "application", "id": "draft-001"}, "parameter_constraints": {"origin": "https://forms.example", "form_id": "benefit-2026", "fields_hash": "sha256:fixture-form-fields"}, "max_confirmed_occurrences": 1, "approval_requirement_ref": "browser-final-submit@1"}],
+        "approval_requirements": [{"approval_requirement_id": "browser-final-submit", "approval_requirement_version": "1", "effect_intent_refs": ["form-benefit-submit-once"], "risk_class": "high", "approver_policy_ref": "forms.submitter@1", "usage_semantics": "single_effect_single_use"}],
+        "completion_contract_ref": {"contract_id": "completion-browser-form", "contract_version": "1"},
+        "limits": {"max_attempts": 3, "task_deadline": "2026-07-21T00:00:00Z", "max_executions_per_attempt": 5, "max_feedback_cycles": 2, "max_reconcile_cycles": 4}
+      },
+      "normalizer": {"normalizer_id": "browser.form_submit", "normalizer_version": "1"},
+      "raw_effect_request": {"origin": "https://forms.example/", "form_id": "benefit-2026", "fields_hash": "sha256:fixture-form-fields"},
+      "normalized_parameters": {"fields_hash": "sha256:fixture-form-fields", "form_id": "benefit-2026", "origin": "https://forms.example"}
+    }
+  ]
+}

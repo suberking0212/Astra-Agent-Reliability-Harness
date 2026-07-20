@@ -1,0 +1,5 @@
+Command: python3 -m ruff check astra tests
+Exit code: 0
+
+All checks passed!
+

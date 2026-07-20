@@ -1,0 +1,10 @@
+{
+  "fixture_schema_version": "1",
+  "scenario_count": 7,
+  "path_count": 5,
+  "case_count": 35,
+  "passed_count": 35,
+  "failures": [],
+  "valid": true
+}
+

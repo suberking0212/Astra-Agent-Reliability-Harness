@@ -1,0 +1,12 @@
+Command: python3 -m pytest -q
+Exit code: 0
+
+........s............................................................... [ 68%]
+.................................                                        [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_phase2_live_provider.py:42: opt-in live Provider credentials/configuration not supplied
+104 passed, 1 skipped in 15.37s
+
+Classification: environment-dependent non-blocking test
+Acceptance impact: none; the skipped live Provider test is outside the Phase 3 core Gate.
+

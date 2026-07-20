@@ -1,0 +1,109 @@
+{
+  "all_checks_passed": true,
+  "checks": {
+    "budget_observed_200_tokens": true,
+    "budget_observed_five_calls": true,
+    "execution_ended_once": true,
+    "execution_succeeded": true,
+    "forbidden_tools_absent": true,
+    "foreign_keys_clean": true,
+    "hermes_one_session_persisted": true,
+    "hermes_role_sequence_valid": true,
+    "hermes_session_integrity": true,
+    "hermes_ten_messages_persisted": true,
+    "one_ticket_persisted": true,
+    "result_receipt_valid": true,
+    "result_validated": true,
+    "sqlite_integrity": true,
+    "three_business_receipts": true,
+    "tool_visibility_exact": true,
+    "trace_has_start_and_end": true,
+    "trace_has_submission_before_validation": true
+  },
+  "counts": {
+    "business_tickets": 1,
+    "execution_receipts": 3,
+    "hermes_messages": 10,
+    "hermes_sessions": 1,
+    "provider_calls": 5,
+    "result_receipts": 1,
+    "trace_spans": 25
+  },
+  "execution_id": "exec-phase2-core-baseline",
+  "generated_at": "2026-07-19T09:54:39.895146+00:00",
+  "observed_tool_sets": [
+    [
+      "create_complaint_ticket",
+      "get_order",
+      "request_approval",
+      "request_user_input",
+      "search_policy",
+      "submit_task_result"
+    ],
+    [
+      "create_complaint_ticket",
+      "get_order",
+      "request_approval",
+      "request_user_input",
+      "search_policy",
+      "submit_task_result"
+    ],
+    [
+      "create_complaint_ticket",
+      "get_order",
+      "request_approval",
+      "request_user_input",
+      "search_policy",
+      "submit_task_result"
+    ],
+    [
+      "create_complaint_ticket",
+      "get_order",
+      "request_approval",
+      "request_user_input",
+      "search_policy",
+      "submit_task_result"
+    ],
+    [
+      "create_complaint_ticket",
+      "get_order",
+      "request_approval",
+      "request_user_input",
+      "search_policy",
+      "submit_task_result"
+    ]
+  ],
+  "receipt_tool_names": [
+    "get_order",
+    "search_policy",
+    "create_complaint_ticket"
+  ],
+  "schema_version": 1,
+  "trace_event_types": [
+    "ExecutionStarted",
+    "ProviderCallStarted",
+    "ProviderCall",
+    "ToolCall",
+    "ToolResult",
+    "HermesToolCallFinished",
+    "ProviderCallStarted",
+    "ProviderCall",
+    "ToolCall",
+    "ToolResult",
+    "HermesToolCallFinished",
+    "ProviderCallStarted",
+    "ProviderCall",
+    "ToolCall",
+    "ToolResult",
+    "HermesToolCallFinished",
+    "ProviderCallStarted",
+    "ProviderCall",
+    "ResultSubmission",
+    "ResultValidation",
+    "HermesToolCallFinished",
+    "ProviderCallStarted",
+    "ProviderCall",
+    "AgentTurnOutput",
+    "ExecutionEnded"
+  ]
+}

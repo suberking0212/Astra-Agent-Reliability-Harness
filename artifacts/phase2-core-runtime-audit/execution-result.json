@@ -1,0 +1,74 @@
+{
+  "agent_turn_finished": true,
+  "assistant_output": "Complaint ticket created and validated against business state.",
+  "error": null,
+  "execution_id": "exec-phase2-core-baseline",
+  "metadata": {
+    "exactly_once_winner": true
+  },
+  "result_receipt": {
+    "checks": {
+      "complaint_ticket_exists": true,
+      "complaint_ticket_matches_outcome": true,
+      "create_ticket_receipt_present": true,
+      "evidence_refs_backed_by_receipts": true,
+      "no_unresolved_interaction": true,
+      "receipt_refs_complete": true,
+      "receipt_refs_owned_by_execution": true
+    },
+    "errors": [],
+    "evidence_refs": [
+      "4d1a21de-a278-405f-86ef-d844fb3a089f",
+      "05025088-96fb-4da0-b728-11ebf02ed3a7",
+      "44f4933a-310a-493a-b73c-57426dd39057"
+    ],
+    "execution_id": "exec-phase2-core-baseline",
+    "outcome": {
+      "customer_id": "cust-001",
+      "order_id": "order-001",
+      "resolution": "complaint_created",
+      "ticket_id": "ticket-dc49d3b1085c"
+    },
+    "receipt_id": "94685fcf-1104-411f-bd6c-86d2215e2ec6",
+    "receipt_refs": [
+      "4d1a21de-a278-405f-86ef-d844fb3a089f",
+      "05025088-96fb-4da0-b728-11ebf02ed3a7",
+      "44f4933a-310a-493a-b73c-57426dd39057"
+    ],
+    "task_id": "task-phase2-core-baseline",
+    "valid": true
+  },
+  "session_handle": "astra-task-phase2-core-baseline-attempt-phase2-core-baseline",
+  "status": "succeeded",
+  "submitted_result": {
+    "evidence_refs": [
+      "4d1a21de-a278-405f-86ef-d844fb3a089f",
+      "05025088-96fb-4da0-b728-11ebf02ed3a7",
+      "44f4933a-310a-493a-b73c-57426dd39057"
+    ],
+    "outcome": {
+      "customer_id": "cust-001",
+      "order_id": "order-001",
+      "resolution": "complaint_created",
+      "ticket_id": "ticket-dc49d3b1085c"
+    },
+    "receipt_refs": [
+      "4d1a21de-a278-405f-86ef-d844fb3a089f",
+      "05025088-96fb-4da0-b728-11ebf02ed3a7",
+      "44f4933a-310a-493a-b73c-57426dd39057"
+    ]
+  },
+  "task_outcome_validated": true,
+  "termination_reason": "task_outcome_validated",
+  "usage": {
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0,
+    "cost_source": "phase2_budget_ledger",
+    "cost_status": "estimated",
+    "estimated_cost_usd": 0.0,
+    "input_tokens": 150,
+    "output_tokens": 50,
+    "reasoning_tokens": 0,
+    "total_tokens": 200
+  }
+}
