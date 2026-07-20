@@ -1,4 +1,4 @@
-"""SQLite persistence and atomic lifecycle constraints for Phase 2."""
+"""SQLite persistence and atomic lifecycle constraints for Astra."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ from typing import Any, Iterator
 from uuid import uuid4
 
 from .domain import InteractionKind, InteractionRequest, ResultReceipt
+
+
+CURRENT_SCHEMA_VERSION = 1
 
 
 def _now() -> str:
@@ -40,7 +43,11 @@ class AstraStore:
         self._connection.execute("PRAGMA foreign_keys = ON")
         if self.path != ":memory:":
             self._connection.execute("PRAGMA journal_mode = WAL")
-        self._initialize()
+        try:
+            self._initialize()
+        except BaseException:
+            self._connection.close()
+            raise
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -82,7 +89,40 @@ class AstraStore:
             return self._connection.execute(sql, tuple(parameters)).fetchall()
 
     def _initialize(self) -> None:
-        self._connection.executescript(
+        with self.transaction() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS astra_schema (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                    version INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            row = connection.execute(
+                "SELECT version FROM astra_schema WHERE singleton = 1"
+            ).fetchone()
+            version = int(row[0]) if row is not None else 0
+            if version > CURRENT_SCHEMA_VERSION:
+                raise RuntimeError(
+                    "Database schema version "
+                    f"{version} is newer than supported version "
+                    f"{CURRENT_SCHEMA_VERSION}"
+                )
+            if version == 0:
+                self._migrate_legacy_to_v1(connection)
+                connection.execute(
+                    """
+                    INSERT INTO astra_schema(singleton, version, updated_at)
+                    VALUES (1, ?, ?)
+                    """,
+                    (CURRENT_SCHEMA_VERSION, _now()),
+                )
+            self._validate_schema(connection)
+
+    @staticmethod
+    def _migrate_legacy_to_v1(connection: sqlite3.Connection) -> None:
+        statements = (
             """
             CREATE TABLE IF NOT EXISTS executions (
                 execution_id TEXT PRIMARY KEY,
@@ -94,8 +134,9 @@ class AstraStore:
                 started_at TEXT NOT NULL,
                 ended_at TEXT,
                 termination_reason TEXT
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS execution_events (
                 event_id TEXT PRIMARY KEY,
                 execution_id TEXT NOT NULL,
@@ -104,8 +145,9 @@ class AstraStore:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
                 UNIQUE(execution_id, event_type)
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS interactions (
                 interaction_id TEXT PRIMARY KEY,
                 execution_id TEXT NOT NULL,
@@ -119,8 +161,9 @@ class AstraStore:
                 created_at TEXT NOT NULL,
                 resolved_at TEXT,
                 FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS execution_receipts (
                 receipt_id TEXT PRIMARY KEY,
                 execution_id TEXT NOT NULL,
@@ -134,11 +177,14 @@ class AstraStore:
                 side_effect INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
-            );
+            )
+            """,
+            """
             CREATE UNIQUE INDEX IF NOT EXISTS ux_receipt_idempotency
                 ON execution_receipts(task_id, tool_name, idempotency_key)
-                WHERE idempotency_key IS NOT NULL;
-
+                WHERE idempotency_key IS NOT NULL
+            """,
+            """
             CREATE TABLE IF NOT EXISTS result_receipts (
                 receipt_id TEXT PRIMARY KEY,
                 execution_id TEXT NOT NULL,
@@ -147,8 +193,9 @@ class AstraStore:
                 receipt_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS budget_ledger (
                 execution_id TEXT PRIMARY KEY,
                 provider_request_count INTEGER NOT NULL DEFAULT 0,
@@ -158,8 +205,9 @@ class AstraStore:
                 estimated_cost_usd REAL NOT NULL DEFAULT 0,
                 reserved_next_call_tokens INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS trace_spans (
                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                 trace_id TEXT NOT NULL,
@@ -178,9 +226,69 @@ class AstraStore:
                 duration_ms REAL,
                 token_usage_json TEXT,
                 FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
-            );
+            )
+            """,
             """
+            CREATE TABLE IF NOT EXISTS phase4_runtime_commands (
+                command_id TEXT PRIMARY KEY,
+                command_type TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS phase4_run_requests (
+                run_request_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                attempt_id TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                state TEXT NOT NULL,
+                priority INTEGER NOT NULL,
+                ready_at TEXT NOT NULL,
+                created_by_command_id TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(task_id) REFERENCES phase3_tasks(task_id),
+                FOREIGN KEY(attempt_id) REFERENCES phase3_attempts(attempt_id),
+                FOREIGN KEY(created_by_command_id)
+                    REFERENCES phase4_runtime_commands(command_id)
+                    DEFERRABLE INITIALLY DEFERRED
+            )
+            """,
         )
+        for statement in statements:
+            connection.execute(statement)
+
+    @staticmethod
+    def _validate_schema(connection: sqlite3.Connection) -> None:
+        required_tables = {
+            "astra_schema",
+            "executions",
+            "execution_events",
+            "interactions",
+            "execution_receipts",
+            "result_receipts",
+            "budget_ledger",
+            "trace_spans",
+            "phase4_runtime_commands",
+            "phase4_run_requests",
+        }
+        rows = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+        missing = required_tables.difference(str(row[0]) for row in rows)
+        if missing:
+            names = ", ".join(sorted(missing))
+            raise RuntimeError(f"Database schema is incomplete: {names}")
+
+    @property
+    def schema_version(self) -> int:
+        row = self.query_one(
+            "SELECT version FROM astra_schema WHERE singleton = 1"
+        )
+        if row is None:
+            raise RuntimeError("Database schema version is not initialized")
+        return int(row[0])
 
     def start_execution(
         self, execution_id: str, task_id: str, attempt_id: str
