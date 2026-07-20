@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -26,6 +27,21 @@ class CommandIdentityConflict(ValueError):
     code = "identity_conflict"
 
 
+class ExecutionEligibilityError(RuntimeError):
+    """The next ready Run Request cannot start an Execution."""
+
+    def __init__(self, code: str, run_request_id: str) -> None:
+        self.code = code
+        self.run_request_id = run_request_id
+        super().__init__(f"{code}: run_request_id {run_request_id!r}")
+
+
+class RunRequestExecutionConflict(RuntimeError):
+    """A Run Request already owns its single allowed Execution."""
+
+    code = "run_request_execution_conflict"
+
+
 class TaskSubmissionResult(FrozenContractModel):
     command_id: str
     task_id: str
@@ -36,6 +52,23 @@ class TaskSubmissionResult(FrozenContractModel):
     attempt_version: int
     run_request_id: str
     run_request_state: str
+
+
+class ExecutionClaimResult(FrozenContractModel):
+    run_request_id: str
+    run_request_state: str
+    execution_id: str
+    execution_status: str
+    task_id: str
+    attempt_id: str
+    started_at: str
+
+
+def _instant(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 class TaskRuntime:
@@ -163,6 +196,141 @@ class TaskRuntime:
                 (command_id, payload_hash, result.model_dump_json(), now),
             )
             return result
+
+    def claim_and_start_execution(
+        self,
+        *,
+        execution_id: str | None = None,
+        now: datetime | None = None,
+    ) -> ExecutionClaimResult | None:
+        """Atomically claim the next ready request and create its Execution."""
+
+        claimed_at = now or datetime.now(timezone.utc)
+        if claimed_at.tzinfo is None:
+            claimed_at = claimed_at.replace(tzinfo=timezone.utc)
+        else:
+            claimed_at = claimed_at.astimezone(timezone.utc)
+        started_at = claimed_at.isoformat()
+
+        with self.store.transaction() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    request.*,
+                    task.contract_json,
+                    task.state AS task_state,
+                    task.current_attempt_id,
+                    attempt.state AS attempt_state
+                FROM phase4_run_requests AS request
+                JOIN phase3_tasks AS task ON task.task_id = request.task_id
+                JOIN phase3_attempts AS attempt
+                    ON attempt.attempt_id = request.attempt_id
+                    AND attempt.task_id = request.task_id
+                WHERE request.state = 'pending'
+                ORDER BY
+                    request.priority DESC,
+                    request.ready_at ASC,
+                    request.created_at ASC,
+                    request.run_request_id ASC
+                """
+            ).fetchall()
+            request = next(
+                (row for row in rows if _instant(row["ready_at"]) <= claimed_at),
+                None,
+            )
+            if request is None:
+                return None
+
+            run_request_id = str(request["run_request_id"])
+            if request["task_state"] in {"succeeded", "failed", "cancelled"}:
+                raise ExecutionEligibilityError(
+                    "task_not_executable", run_request_id
+                )
+            if request["current_attempt_id"] != request["attempt_id"]:
+                raise ExecutionEligibilityError(
+                    "attempt_not_current", run_request_id
+                )
+            if request["attempt_state"] != "active":
+                raise ExecutionEligibilityError(
+                    "attempt_not_active", run_request_id
+                )
+
+            contract = TaskContract.model_validate_json(request["contract_json"])
+            if claimed_at >= _instant(contract.limits.task_deadline):
+                raise ExecutionEligibilityError(
+                    "task_deadline_exceeded", run_request_id
+                )
+            if (
+                contract.limits.attempt_deadline is not None
+                and claimed_at >= _instant(contract.limits.attempt_deadline)
+            ):
+                raise ExecutionEligibilityError(
+                    "attempt_deadline_exceeded", run_request_id
+                )
+
+            execution_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM executions WHERE attempt_id = ?",
+                    (request["attempt_id"],),
+                ).fetchone()[0]
+            )
+            if execution_count >= contract.limits.max_executions_per_attempt:
+                raise ExecutionEligibilityError(
+                    "execution_budget_exhausted", run_request_id
+                )
+
+            actual_execution_id = execution_id or "execution:" + str(uuid4())
+            cursor = connection.execute(
+                """
+                UPDATE phase4_run_requests
+                SET state = 'claimed'
+                WHERE run_request_id = ? AND state = 'pending'
+                """,
+                (run_request_id,),
+            )
+            if cursor.rowcount != 1:
+                return None
+
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO executions(
+                        execution_id, task_id, attempt_id, status,
+                        started_at, run_request_id
+                    ) VALUES (?, ?, ?, 'running', ?, ?)
+                    """,
+                    (
+                        actual_execution_id,
+                        request["task_id"],
+                        request["attempt_id"],
+                        started_at,
+                        run_request_id,
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                if "executions.run_request_id" in str(error):
+                    raise RunRequestExecutionConflict(
+                        f"run_request_execution_conflict: "
+                        f"run_request_id {run_request_id!r}"
+                    ) from error
+                raise
+
+            connection.execute(
+                """
+                INSERT INTO budget_ledger(execution_id)
+                VALUES (?)
+                """,
+                (actual_execution_id,),
+            )
+            return ExecutionClaimResult(
+                run_request_id=run_request_id,
+                run_request_state="claimed",
+                execution_id=actual_execution_id,
+                execution_status="running",
+                task_id=str(request["task_id"]),
+                attempt_id=str(request["attempt_id"]),
+                started_at=started_at,
+            )
 
 
 class Phase2Runtime:

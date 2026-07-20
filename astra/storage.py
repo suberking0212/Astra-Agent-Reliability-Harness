@@ -15,7 +15,7 @@ from uuid import uuid4
 from .domain import InteractionKind, InteractionRequest, ResultReceipt
 
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 def _now() -> str:
@@ -114,9 +114,20 @@ class AstraStore:
                 connection.execute(
                     """
                     INSERT INTO astra_schema(singleton, version, updated_at)
-                    VALUES (1, ?, ?)
+                    VALUES (1, 1, ?)
                     """,
-                    (CURRENT_SCHEMA_VERSION, _now()),
+                    (_now(),),
+                )
+                version = 1
+            if version == 1:
+                self._migrate_v1_to_v2(connection)
+                connection.execute(
+                    """
+                    UPDATE astra_schema
+                    SET version = 2, updated_at = ?
+                    WHERE singleton = 1
+                    """,
+                    (_now(),),
                 )
             self._validate_schema(connection)
 
@@ -260,6 +271,28 @@ class AstraStore:
             connection.execute(statement)
 
     @staticmethod
+    def _migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(executions)")
+        }
+        if "run_request_id" not in columns:
+            connection.execute(
+                """
+                ALTER TABLE executions
+                ADD COLUMN run_request_id TEXT
+                    REFERENCES phase4_run_requests(run_request_id)
+                """
+            )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_executions_run_request_id
+            ON executions(run_request_id)
+            WHERE run_request_id IS NOT NULL
+            """
+        )
+
+    @staticmethod
     def _validate_schema(connection: sqlite3.Connection) -> None:
         required_tables = {
             "astra_schema",
@@ -280,6 +313,22 @@ class AstraStore:
         if missing:
             names = ", ".join(sorted(missing))
             raise RuntimeError(f"Database schema is incomplete: {names}")
+        execution_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(executions)")
+        }
+        if "run_request_id" not in execution_columns:
+            raise RuntimeError(
+                "Database schema is incomplete: executions.run_request_id"
+            )
+        indexes = {
+            str(row[1]): bool(row[2])
+            for row in connection.execute("PRAGMA index_list(executions)")
+        }
+        if not indexes.get("ux_executions_run_request_id"):
+            raise RuntimeError(
+                "Database schema is incomplete: unique execution run request index"
+            )
 
     @property
     def schema_version(self) -> int:

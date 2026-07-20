@@ -6,17 +6,25 @@ import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from astra.phase3.governance import GovernanceStore, RuntimeGovernanceCore
 from astra.phase3.task_contract import TaskContract
-from astra.runtime import CommandIdentityConflict, TaskRuntime
+from astra.runtime import (
+    CommandIdentityConflict,
+    ExecutionEligibilityError,
+    RunRequestExecutionConflict,
+    TaskRuntime,
+)
 from astra.storage import CURRENT_SCHEMA_VERSION, AstraStore
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "phase3_contract_round2.json"
+CLAIM_TIME = datetime(2026, 7, 20, 12, tzinfo=timezone.utc)
+READY_AT = "2026-07-20T00:00:00+00:00"
 
 
 def _contract() -> TaskContract:
@@ -40,6 +48,15 @@ def test_new_database_initializes_target_schema_version(tmp_path):
         }
         assert "phase4_runtime_commands" in tables
         assert "phase4_run_requests" in tables
+        execution_columns = {
+            row[1] for row in store.query_all("PRAGMA table_info(executions)")
+        }
+        assert "run_request_id" in execution_columns
+        execution_indexes = {
+            row[1]: bool(row[2])
+            for row in store.query_all("PRAGMA index_list(executions)")
+        }
+        assert execution_indexes["ux_executions_run_request_id"] is True
     finally:
         store.close()
 
@@ -111,6 +128,58 @@ def test_newer_schema_version_is_rejected(tmp_path):
 
     with pytest.raises(RuntimeError, match="newer than supported"):
         AstraStore(database)
+
+
+def test_schema_v1_migrates_execution_relation_without_rewriting_history(
+    tmp_path,
+):
+    database = tmp_path / "schema-v1.sqlite3"
+    contract = _contract()
+    governance_store = GovernanceStore(database)
+    RuntimeGovernanceCore(governance_store).create_task(
+        contract,
+        task_id="v1-task",
+        attempt_id="v1-attempt",
+    )
+    governance_store.close()
+
+    connection = sqlite3.connect(database)
+    connection.execute("PRAGMA foreign_keys = ON")
+    AstraStore._migrate_legacy_to_v1(connection)
+    connection.execute(
+        """
+        CREATE TABLE astra_schema (
+            singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+            version INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute("INSERT INTO astra_schema VALUES (1, 1, 'v1')")
+    connection.execute(
+        """
+        INSERT INTO executions(
+            execution_id, task_id, attempt_id, status, started_at
+        ) VALUES ('v1-execution', 'v1-task', 'v1-attempt', 'running', 'v1')
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    store = AstraStore(database)
+    try:
+        assert store.schema_version == CURRENT_SCHEMA_VERSION
+        execution = store.get_execution("v1-execution")
+        assert execution is not None
+        assert execution["run_request_id"] is None
+        assert store.query_one(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'index' AND name = 'ux_executions_run_request_id'
+            """
+        )
+    finally:
+        store.close()
 
 
 def test_submit_task_atomically_creates_initial_lifecycle(tmp_path):
@@ -295,5 +364,349 @@ def test_two_connections_submit_same_command_only_create_one_lifecycle(tmp_path)
         assert _count(audit, "phase3_attempts") == 1
         assert _count(audit, "phase4_run_requests") == 1
         assert _count(audit, "phase4_runtime_commands") == 1
+    finally:
+        audit.close()
+
+
+def test_claim_and_start_execution_commits_one_atomic_lifecycle(tmp_path):
+    store = AstraStore(tmp_path / "claim.sqlite3")
+    runtime = TaskRuntime(store)
+    submission = runtime.submit_task(
+        command_id="submit-claim",
+        task_id="task-claim",
+        contract=_contract(),
+        ready_at=READY_AT,
+    )
+    try:
+        result = runtime.claim_and_start_execution(
+            execution_id="execution-claim",
+            now=CLAIM_TIME,
+        )
+
+        assert result is not None
+        assert result.run_request_id == submission.run_request_id
+        assert result.run_request_state == "claimed"
+        assert result.execution_id == "execution-claim"
+        request = store.query_one(
+            "SELECT * FROM phase4_run_requests WHERE run_request_id = ?",
+            (submission.run_request_id,),
+        )
+        execution = store.get_execution("execution-claim")
+        assert request["state"] == "claimed"
+        assert execution is not None
+        assert execution["status"] == "running"
+        assert execution["run_request_id"] == submission.run_request_id
+    finally:
+        store.close()
+
+
+def test_claim_and_start_execution_leaves_future_request_pending(tmp_path):
+    store = AstraStore(tmp_path / "not-ready.sqlite3")
+    runtime = TaskRuntime(store)
+    submission = runtime.submit_task(
+        command_id="submit-not-ready",
+        task_id="task-not-ready",
+        contract=_contract(),
+        ready_at="2026-07-20T13:00:00+00:00",
+    )
+    try:
+        assert runtime.claim_and_start_execution(now=CLAIM_TIME) is None
+        request = store.query_one(
+            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+            (submission.run_request_id,),
+        )
+        assert request["state"] == "pending"
+        assert _count(store, "executions") == 0
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    ("table", "identity_column", "state", "expected_code"),
+    (
+        ("phase3_tasks", "task_id", "succeeded", "task_not_executable"),
+        ("phase3_attempts", "attempt_id", "completed", "attempt_not_active"),
+    ),
+)
+def test_claim_and_start_execution_rejects_ineligible_lifecycle_state(
+    tmp_path,
+    table,
+    identity_column,
+    state,
+    expected_code,
+):
+    store = AstraStore(tmp_path / f"ineligible-{table}.sqlite3")
+    runtime = TaskRuntime(store)
+    submission = runtime.submit_task(
+        command_id=f"submit-ineligible-{table}",
+        task_id=f"task-ineligible-{table}",
+        contract=_contract(),
+        ready_at=READY_AT,
+    )
+    identity = (
+        submission.task_id if identity_column == "task_id" else submission.attempt_id
+    )
+    store.connection.execute(
+        f"UPDATE {table} SET state = ? WHERE {identity_column} = ?",
+        (state, identity),
+    )
+    try:
+        with pytest.raises(ExecutionEligibilityError, match=expected_code) as error:
+            runtime.claim_and_start_execution(now=CLAIM_TIME)
+        assert error.value.code == expected_code
+        request = store.query_one(
+            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+            (submission.run_request_id,),
+        )
+        assert request["state"] == "pending"
+        assert _count(store, "executions") == 0
+    finally:
+        store.close()
+
+
+def test_claim_and_start_execution_enforces_task_deadline(tmp_path):
+    store = AstraStore(tmp_path / "deadline.sqlite3")
+    runtime = TaskRuntime(store)
+    submission = runtime.submit_task(
+        command_id="submit-deadline",
+        task_id="task-deadline",
+        contract=_contract(),
+        ready_at=READY_AT,
+    )
+    try:
+        with pytest.raises(
+            ExecutionEligibilityError, match="task_deadline_exceeded"
+        ) as error:
+            runtime.claim_and_start_execution(
+                now=datetime(2026, 7, 21, tzinfo=timezone.utc)
+            )
+        assert error.value.code == "task_deadline_exceeded"
+        request = store.query_one(
+            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+            (submission.run_request_id,),
+        )
+        assert request["state"] == "pending"
+        assert _count(store, "executions") == 0
+    finally:
+        store.close()
+
+
+def test_claim_and_start_execution_enforces_execution_budget(tmp_path):
+    store = AstraStore(tmp_path / "execution-budget.sqlite3")
+    runtime = TaskRuntime(store)
+    submission = runtime.submit_task(
+        command_id="submit-budget",
+        task_id="task-budget",
+        contract=_contract(),
+        ready_at=READY_AT,
+    )
+    for ordinal in range(_contract().limits.max_executions_per_attempt):
+        store.start_execution(
+            f"historical-execution-{ordinal}",
+            submission.task_id,
+            submission.attempt_id,
+        )
+    try:
+        with pytest.raises(
+            ExecutionEligibilityError, match="execution_budget_exhausted"
+        ) as error:
+            runtime.claim_and_start_execution(now=CLAIM_TIME)
+        assert error.value.code == "execution_budget_exhausted"
+        request = store.query_one(
+            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+            (submission.run_request_id,),
+        )
+        assert request["state"] == "pending"
+        assert _count(store, "executions") == 4
+    finally:
+        store.close()
+
+
+def test_execution_insert_failure_rolls_back_claim(tmp_path):
+    store = AstraStore(tmp_path / "claim-rollback.sqlite3")
+    runtime = TaskRuntime(store)
+    submission = runtime.submit_task(
+        command_id="submit-claim-rollback",
+        task_id="task-claim-rollback",
+        contract=_contract(),
+        ready_at=READY_AT,
+    )
+    store.connection.execute(
+        """
+        CREATE TRIGGER fail_execution_insert
+        BEFORE INSERT ON executions
+        BEGIN
+            SELECT RAISE(ABORT, 'forced execution failure');
+        END
+        """
+    )
+    try:
+        with pytest.raises(sqlite3.IntegrityError, match="forced execution failure"):
+            runtime.claim_and_start_execution(now=CLAIM_TIME)
+        request = store.query_one(
+            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+            (submission.run_request_id,),
+        )
+        assert request["state"] == "pending"
+        assert _count(store, "executions") == 0
+    finally:
+        store.close()
+
+
+def test_repeated_claim_does_not_create_a_second_execution(tmp_path):
+    store = AstraStore(tmp_path / "repeat-claim.sqlite3")
+    runtime = TaskRuntime(store)
+    runtime.submit_task(
+        command_id="submit-repeat-claim",
+        task_id="task-repeat-claim",
+        contract=_contract(),
+        ready_at=READY_AT,
+    )
+    try:
+        first = runtime.claim_and_start_execution(
+            execution_id="execution-repeat-claim",
+            now=CLAIM_TIME,
+        )
+        second = runtime.claim_and_start_execution(
+            execution_id="execution-repeat-claim-2",
+            now=CLAIM_TIME,
+        )
+        assert first is not None
+        assert second is None
+        assert _count(store, "executions") == 1
+    finally:
+        store.close()
+
+
+def test_unique_run_request_conflict_has_stable_error_semantics(tmp_path):
+    store = AstraStore(tmp_path / "claim-unique.sqlite3")
+    runtime = TaskRuntime(store)
+    submission = runtime.submit_task(
+        command_id="submit-claim-unique",
+        task_id="task-claim-unique",
+        contract=_contract(),
+        ready_at=READY_AT,
+    )
+    runtime.claim_and_start_execution(
+        execution_id="execution-claim-unique",
+        now=CLAIM_TIME,
+    )
+    store.connection.execute(
+        """
+        UPDATE phase4_run_requests SET state = 'pending'
+        WHERE run_request_id = ?
+        """,
+        (submission.run_request_id,),
+    )
+    try:
+        with pytest.raises(
+            RunRequestExecutionConflict,
+            match="run_request_execution_conflict",
+        ) as error:
+            runtime.claim_and_start_execution(
+                execution_id="execution-claim-unique-2",
+                now=CLAIM_TIME,
+            )
+        assert error.value.code == "run_request_execution_conflict"
+        request = store.query_one(
+            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+            (submission.run_request_id,),
+        )
+        assert request["state"] == "pending"
+        assert _count(store, "executions") == 1
+    finally:
+        store.close()
+
+
+def test_two_connections_competing_for_claim_create_one_execution(tmp_path):
+    database = tmp_path / "concurrent-claim.sqlite3"
+    first_store = AstraStore(database)
+    second_store = AstraStore(database)
+    first_runtime = TaskRuntime(first_store)
+    second_runtime = TaskRuntime(second_store)
+    first_runtime.submit_task(
+        command_id="submit-concurrent-claim",
+        task_id="task-concurrent-claim",
+        contract=_contract(),
+        ready_at=READY_AT,
+    )
+    barrier = threading.Barrier(2)
+
+    def claim(runtime: TaskRuntime, execution_id: str):
+        barrier.wait()
+        return runtime.claim_and_start_execution(
+            execution_id=execution_id,
+            now=CLAIM_TIME,
+        )
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = (
+                pool.submit(claim, first_runtime, "execution-concurrent-1"),
+                pool.submit(claim, second_runtime, "execution-concurrent-2"),
+            )
+            results = [future.result() for future in futures]
+        assert sum(result is not None for result in results) == 1
+    finally:
+        first_store.close()
+        second_store.close()
+
+    audit = AstraStore(database)
+    try:
+        assert _count(audit, "executions") == 1
+        request = audit.query_one("SELECT state FROM phase4_run_requests")
+        assert request["state"] == "claimed"
+    finally:
+        audit.close()
+
+
+def test_claimed_execution_survives_restart_and_cannot_be_reclaimed(tmp_path):
+    database = tmp_path / "claim-restart.sqlite3"
+    store = AstraStore(database)
+    runtime = TaskRuntime(store)
+    submission = runtime.submit_task(
+        command_id="submit-claim-restart",
+        task_id="task-claim-restart",
+        contract=_contract(),
+        ready_at=READY_AT,
+    )
+    original = runtime.claim_and_start_execution(
+        execution_id="execution-claim-restart",
+        now=CLAIM_TIME,
+    )
+    assert original is not None
+    store.close()
+
+    script = """
+import sys
+from astra.runtime import TaskRuntime
+from astra.storage import AstraStore
+
+store = AstraStore(sys.argv[1])
+result = TaskRuntime(store).claim_and_start_execution()
+print('none' if result is None else result.model_dump_json())
+store.close()
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(database)],
+        cwd=Path(__file__).parents[1],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert completed.stdout.strip() == "none"
+
+    audit = AstraStore(database)
+    try:
+        request = audit.query_one(
+            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+            (submission.run_request_id,),
+        )
+        execution = audit.get_execution(original.execution_id)
+        assert request["state"] == "claimed"
+        assert execution is not None
+        assert execution["run_request_id"] == submission.run_request_id
+        assert _count(audit, "executions") == 1
     finally:
         audit.close()
