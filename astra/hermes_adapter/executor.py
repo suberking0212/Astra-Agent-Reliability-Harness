@@ -17,6 +17,7 @@ from ..domain import (
     RuntimeInvocation,
 )
 from ..result_validator import MinimalResultValidator
+from ..runtime import TaskRuntime
 from ..storage import AstraStore
 from ..tool_gateway import AstraToolGateway
 from ..trace import NeutralTraceCollector
@@ -33,7 +34,9 @@ class HermesExecutor:
         validator: MinimalResultValidator,
         budget: BudgetLedger,
         trace: NeutralTraceCollector,
+        runtime: TaskRuntime,
         client_factory: Callable[[RuntimeInvocation], Any] | None = None,
+        session_database_path: str | Path | None = None,
     ) -> None:
         self.hermes_root = Path(hermes_root)
         self.store = store
@@ -42,6 +45,23 @@ class HermesExecutor:
         self.budget = budget
         self.trace = trace
         self.client_factory = client_factory
+        self.session_database_path = (
+            Path(session_database_path) if session_database_path is not None else None
+        )
+        self.runtime = runtime
+        if self.runtime.store is not store:
+            raise ValueError("HermesExecutor runtime must use the injected AstraStore")
+        for component_name, component_store in (
+            ("runtime", self.runtime.store),
+            ("gateway", gateway.store),
+            ("validator", validator.store),
+            ("budget", budget.store),
+            ("trace", trace.store),
+        ):
+            if component_store is not store:
+                raise ValueError(
+                    f"HermesExecutor {component_name} must share AstraStore authority"
+                )
         self._agents: dict[str, Any] = {}
 
     async def execute(
@@ -49,11 +69,6 @@ class HermesExecutor:
         invocation: RuntimeInvocation,
         event_sink: ExecutionEventSink,
     ) -> ExecutionResult:
-        self.store.start_execution(
-            invocation.execution_id,
-            invocation.task_id,
-            invocation.attempt_id,
-        )
         context = ExecutionBridgeContext(
             invocation=invocation,
             store=self.store,
@@ -61,6 +76,7 @@ class HermesExecutor:
             validator=self.validator,
             budget=self.budget,
             trace=self.trace,
+            runtime=self.runtime,
         )
         registry.register(context)
         context.emit("ExecutionStarted", "hermes_executor_adapter")
@@ -83,27 +99,14 @@ class HermesExecutor:
             registry.unregister(invocation.task_id)
 
         result = self._map_result(invocation, context, hermes_result, caught)
-        won = self.store.finalize_execution(
-            execution_id=invocation.execution_id,
-            status=result.status.value,
-            termination_reason=result.termination_reason,
-            payload={
-                "task_outcome_validated": result.task_outcome_validated,
-                "agent_turn_finished": result.agent_turn_finished,
+        context.emit(
+            "ExecutionEnded",
+            "hermes_executor_adapter",
+            {
+                "status": result.status.value,
+                "termination_reason": result.termination_reason,
             },
         )
-        result = result.model_copy(
-            update={"metadata": {"exactly_once_winner": won}}
-        )
-        if won:
-            context.emit(
-                "ExecutionEnded",
-                "hermes_executor_adapter",
-                {
-                    "status": result.status.value,
-                    "termination_reason": result.termination_reason,
-                },
-            )
         for event in context.events:
             await event_sink(event)
         return result
@@ -123,20 +126,42 @@ class HermesExecutor:
         if inserted:
             sys.path.insert(0, root)
         try:
-            from hermes_cli.plugins import discover_plugins
+            from hermes_cli.plugins import (
+                PluginContext,
+                PluginManifest,
+                discover_plugins,
+                get_plugin_manager,
+            )
             from hermes_state import SessionDB
             from run_agent import AIAgent
+            from tools.registry import registry as hermes_tool_registry
+
+            from .bridge import register as register_astra_bridge
 
             # model_tools performs plugin discovery at module import time. In a
             # long-lived process (or a test suite that changes HERMES_HOME),
             # that import may have happened before the Astra plugin became
             # active, so explicitly discover against the current manager.
             discover_plugins()
+            if hermes_tool_registry.get_entry("submit_task_result") is None:
+                register_astra_bridge(
+                    PluginContext(
+                        PluginManifest(
+                            name="astra_bridge",
+                            version="1",
+                            description="Astra production bridge",
+                            source="bundled",
+                            key="astra_bridge",
+                        ),
+                        get_plugin_manager(),
+                    )
+                )
 
             provider = invocation.provider_config
             session_id = invocation.session_handle or (
                 f"astra-{invocation.task_id}-{invocation.attempt_id}"
             )
+            self.runtime.save_session_handle(invocation.execution_id, session_id)
             task_contract = json.dumps(
                 invocation.task_contract,
                 ensure_ascii=False,
@@ -165,7 +190,7 @@ class HermesExecutor:
                 quiet_mode=True,
                 skip_context_files=True,
                 skip_memory=True,
-                session_db=SessionDB(),
+                session_db=SessionDB(db_path=self.session_database_path),
                 session_id=session_id,
                 ephemeral_system_prompt=(
                     "ASTRA_TASK_CONTRACT=" + task_contract + "\n"
@@ -190,8 +215,7 @@ class HermesExecutor:
             finally:
                 self._agents.pop(invocation.execution_id, None)
             handle = result.get("session_id") or session_id
-            self.store.save_session_handle(invocation.execution_id, handle)
-            return result
+            return {**result, "session_id": handle}
         finally:
             if inserted:
                 sys.path.remove(root)

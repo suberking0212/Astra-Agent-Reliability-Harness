@@ -6,12 +6,13 @@ slice without modifying the Hermes Agent Loop.
 Current status:
 
 ```text
-Phase 2 Core: CLOSED AND BASELINED
+Phase 2 Core: IMPLEMENTED / LOCALLY VALIDATED
 Phase 2 Live Validation: PENDING (missing explicit credentials)
 Phase 3 Design: FROZEN
 Phase 3 Contract Domain Layer: IMPLEMENTED
-Phase 3 Runtime Governance Core: IMPLEMENTED AS A PHASE 2 RUNTIME COMPONENT
-Phase 3 Acceptance: COMPLETE AND FROZEN
+Phase 3 P0 Production Governance Chain: LOCALLY VALIDATED
+Phase 4 Critical Durable Runtime Paths: LOCALLY VALIDATED
+Full Batch / Stress / Production Readiness: NOT CLAIMED
 ```
 
 The Phase 3 ownership boundary is:
@@ -30,38 +31,17 @@ Hermes decides how to execute. Astra decides whether an action is allowed,
 whether the Task Contract is satisfied, and which facts may be formally
 recognized.
 
-Phase 3 contracts are frozen after two rounds of scenario validation. The
-business-agnostic contract domain layer is implemented as immutable models,
+The Phase 3 business-agnostic contract domain layer is implemented as immutable models,
 value objects, registries, and pure domain services under `astra/phase3/`.
 The minimal Runtime Governance Core is composed into the existing
 `Phase2Runtime`; no parallel Runtime, workflow engine, coordinator, dispatcher,
 or orchestrator has been added.
 
-The reproducible completion baseline is archived under
-`artifacts/phase3-governance-complete/` and identified by Git tag
-`phase3-governance-complete`. From this baseline onward, Phase 3 implementation
-is frozen. Runtime or contract changes require explicit Phase 4 acceptance
-criteria; code cleanup, architectural preference, or opportunistic optimization
-is not sufficient justification to modify the frozen implementation.
-
-## Phase 3 CLI development entry
-
-Phase 3 uses a CLI as its only development entry. It reads persisted contract
-JSON or the frozen table-driven fixture and delegates all decisions to the
-pure domain layer:
-
-```bash
-python -m astra.phase3 validate-round2 \
-  --fixture tests/fixtures/phase3_contract_round2.json
-
-python -m astra.phase3 validate-governance-round2 \
-  --fixture tests/fixtures/phase3_contract_round2.json
-
-python -m astra.phase3 validate-contract /path/to/materialized-contract.json
-```
-
-After installing the project, the equivalent command is `astra-phase3`.
-Web APIs and WebUI are intentionally outside the Phase 3 scope.
+The current release claim is intentionally narrow: waiting/resume/restart,
+exact approval, governed side effects, cancel fencing, atomic new Attempt, and
+persisted Snapshot reuse have local production-path evidence. Live Provider,
+large-scale stress, every-version E2E, and full historical Batch migration are
+not claimed by this status.
 
 The implemented Phase 2 execution path is:
 
@@ -103,47 +83,6 @@ After resolution, the runtime creates a new Astra Execution and starts a new
 Hermes turn, reusing or rebuilding the Hermes Session according to session
 policy. It never resumes a saved Python call stack.
 
-## Run the deterministic test suite
-
-```bash
-pytest -q
-```
-
-The normal complaint E2E test uses a scripted provider boundary while keeping
-the real Hermes plugin discovery, tool registry, Agent Loop, tool execution,
-observer hooks, and SessionDB persistence.
-
-## Opt in to the live Provider smoke test
-
-The live test is skipped by default and never blocks ordinary CI. It is an
-**environment-dependent non-blocking test**: external Provider credentials and
-network availability are required, it is not part of the Phase 3 core Gate,
-and its skip does not affect Phase 3 acceptance.
-
-```bash
-export ASTRA_RUN_LIVE_PROVIDER=1
-export ASTRA_LIVE_BASE_URL="https://provider.example/v1"
-export ASTRA_LIVE_API_KEY="..."
-export ASTRA_LIVE_MODEL="model-name"
-# Optional: ASTRA_LIVE_PROVIDER and ASTRA_LIVE_API_MODE
-pytest -q tests/test_phase2_live_provider.py
-```
-
-Business side effects remain confined to the local Mock Business Service.
-
-## Reproduce the Phase 2 Core audit and baseline
-
-```bash
-python3 scripts/run_phase2_core_audit.py
-pytest -q tests/test_phase2_stress.py
-python3 scripts/freeze_phase2_core_baseline.py
-```
-
-Generated evidence is stored under `artifacts/phase2-core-runtime-audit/`.
-The frozen source archive and manifest are written to
-`artifacts/phase2-core-baseline-source.tar.gz` and
-`artifacts/phase2-core-baseline-manifest.json`.
-
 ## Package boundaries
 
 - `astra/domain.py`: Hermes-independent executor, event, result, and tool ports.
@@ -168,8 +107,6 @@ The frozen source archive and manifest are written to
   approval consumption, ExternalOperation identity, authoritative Task/Attempt
   CAS, and atomic Reliability Fact/Outbox publication. It reuses the existing
   Phase 2 store/transaction and is invoked by `Phase2Runtime`.
-- `astra/phase3/round2.py`: pure fixture-facing contract-chain validation; it
-  does not select tools, execute business actions, or coordinate workflows.
 - `astra/phase3/cli.py`: thin, machine-readable development adapter for the
   Phase 3 domain layer; no Web API or WebUI surface is included.
 
@@ -193,8 +130,6 @@ The frozen source archive and manifest are written to
   aggregation.
 - `docs/phase3/DECISION_POINTS_AND_SNAPSHOTS.md`: consistent decision inputs,
   idempotency, CAS, and atomic application.
-- `docs/phase3/CONTRACT_SCENARIO_VALIDATION_ROUND2.md`: seven-scenario,
-  five-path contract fixtures and the Phase 3 design freeze evidence.
 
 Reliability Facts are governance evidence, not a second source of truth.
 Current state remains authoritative in versioned Task/Attempt/Execution,

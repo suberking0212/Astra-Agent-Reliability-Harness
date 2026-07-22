@@ -2,7 +2,7 @@
 
 > Phase 1：仓库与 Hermes 研究  
 > 检查日期：2026-07-19  
-> 研究范围：`docs/development_updated.md`、《深入理解 AI Agent》、`hermes-agent-main/` 源码与相关测试  
+> 研究范围：`docs/development_updated.md`、《深入理解 AI Agent》和 `hermes-agent-main/` 源码
 > 结论适用版本：Hermes Agent `0.18.2`，Python `>=3.11,<3.14`
 
 > Phase 3 设计更新（2026-07-19）：本文的 Hermes 源码事实和扩展点分析继续有效；旧 `Failure Detector`、`Recovery Engine`、`Outcome Validator` 命名及模块划分已由 `docs/adr/ADR-003-task-reliability-boundary.md` 和 `docs/phase3/` 中的 Task Rules、Task Policy、Requirement Evaluators、EvidenceSnapshot 与 DecisionContext 契约取代。
@@ -72,8 +72,7 @@ artifacts/hermes-source-snapshot-0.18.2.tar.gz
 - Archive SHA-256：`200a11f1bfe275b77cf69882ed603cb1e0144153de8524b2283310d981529e3b`；
 - Source tree SHA-256：`95239075bca612240d6f76ceae9b3d2d07ea7209de671641f2e89c5e09d4426e`；
 - `commit_sha`：`null`；
-- Python：`3.13.11`；
-- 兼容性测试：158 passed，0 failed。
+- Python：`3.13.11`。
 
 Manifest 同时记录了树哈希算法、归档规范化规则和本地环境/缓存排除项，可用 `scripts/generate_hermes_source_manifest.py` 重建与复核。
 
@@ -83,10 +82,9 @@ Manifest 同时记录了树哈希算法、归档规范化规则和本地环境/�
 - 不能证明该快照与上游某个 `v0.18.2` tag 或发布 artifact 字节一致；
 - 无法使用 `git log`、`git blame`、commit diff 或 bisect 追踪扩展点的引入历史；
 - 后续 Hermes 升级比较只能先做文件/行为差异，不能做可靠的 commit-to-commit 比较；
-- 测试包装器会输出 `fatal: not a git repository`，但不影响不依赖 Git 的测试执行；
-- 获得完整 Git 仓库后，可补充 remote URL、commit SHA、tag、工作树状态以及该 commit 对应的兼容性测试结果。
+- 获得完整 Git 仓库后，可补充 remote URL、commit SHA、tag 和工作树状态。
 
-缺少 commit SHA 是来源可追溯性缺口，不是 Phase 1 的硬验收条件。完整 Git 仓库恢复和候选 commit 比对作为独立延后任务处理；当前源码目录、确定性归档、Manifest、`pyproject.toml`、`uv.lock`、本分析文档和兼容性测试结果共同构成 Phase 1 的版本基线。
+缺少 commit SHA 是来源可追溯性缺口。完整 Git 仓库恢复和候选 commit 比对作为独立延后任务处理。
 
 ---
 
@@ -385,7 +383,7 @@ CLI、Gateway、TUI 和 ACP 都从其他线程/事件循环调用该入口。Ast
 11. `AIAgent.interrupt()` 和公开 `/steer` 行为；
 12. SessionDB/Session resume 产品能力。
 
-### 6.2 源码与测试验证的兼容扩展点
+### 6.2 源码确认的兼容扩展点
 
 - `step_callback(api_call_count, prev_tools)`；
 - `tool_start_callback` / `tool_complete_callback` / `tool_progress_callback`；
@@ -396,7 +394,7 @@ CLI、Gateway、TUI 和 ACP 都从其他线程/事件循环调用该入口。Ast
 - Plugin 中的受控工具 handler 将调用转发给外部 Astra Tool Gateway；
 - 在 Adapter 外层对所有 return/raise 路径统一产生 Execution-ended 事件。
 
-这些点虽然有源码和测试证据，但 Adapter 应归一化它们，不能让上层直接依赖回调签名或 Hermes result dict。
+这些点由当前源码行为确认，但 Adapter 应归一化它们，不能让上层直接依赖回调签名或 Hermes result dict。
 
 ### 6.3 当前不存在的稳定边界
 
@@ -435,7 +433,7 @@ CLI、Gateway、TUI 和 ACP 都从其他线程/事件循环调用该入口。Ast
 | 标记 | 含义 |
 | --- | --- |
 | `DOC` | 官方/随源码文档支持的稳定扩展点 |
-| `COMPAT` | 通过源码和测试验证的兼容扩展点 |
+| `COMPAT` | 由当前源码行为确认的兼容扩展点 |
 | `NONE` | 当前版本不存在满足完整语义的稳定边界 |
 | `ADAPTER` | 必须由 Hermes Executor Adapter 转换或隔离 |
 | `SHIM` | 若必须满足完整语义，需要最小 Integration Shim |
@@ -725,7 +723,7 @@ Adapter 外层 `try/finally` 只能保证本进程尽力收敛，不能单独提
 
 ### 11.2 已记录但延后的两个 Shim
 
-以下 Shim 不作为 Phase 2 初始实现的前置条件。只有最小纵向闭环的实测证据证明稳定公开边界不足，并且对应能力确实成为验收所需时，才单独立项。
+以下 Shim 不作为 Phase 2 初始实现的前置条件。只有实际集成证明稳定公开边界不足，并且对应能力确有需要时，才单独立项。
 
 #### A. `PreProviderBudgetShim`
 
@@ -735,7 +733,7 @@ Adapter 外层 `try/finally` 只能保证本进程尽力收敛，不能单独提
 
 Phase 2 初期替代方案：Budget Ledger 只提供 `observe_only` 和 `conservative_limit`，记录调用次数、观测 Token、估算 Cost 和下一调用预留 Token，不宣称绝对精确的财务硬预算。
 
-若后续确需 Shim，最小方案是在 Hermes 集成层生成当前 Transport 可接受的 synthetic terminal response，使 Loop 以明确 limit reason 结束；Adapter 再映射为 `LIMIT_EXCEEDED`。该 shim 必须按 API mode 做兼容测试，不能向上暴露 synthetic response 类型。
+若后续确需 Shim，最小方案是在 Hermes 集成层生成当前 Transport 可接受的 synthetic terminal response，使 Loop 以明确 limit reason 结束；Adapter 再映射为 `LIMIT_EXCEEDED`。该 shim 不能向上暴露 synthetic response 类型。
 
 #### B. `GenericFinalGateShim`
 
@@ -782,114 +780,7 @@ Hermes 0.18.2
 
 ---
 
-## 12. 最小 Agent 验证结果
-
-### 12.1 验证方式
-
-由于当前环境未发现模型 Provider API key/token，本阶段没有发送真实模型请求。按阶段约束，采用：
-
-```text
-真实 Hermes 0.18.2 AIAgent
-+ 真实 Plugin discovery
-+ 真实 Tool Registry / Toolset filtering
-+ 真实 conversation loop
-+ 真实 tool executor / result feedback
-+ 真实 Observer Hooks
-+ 真实 SessionDB persistence
-+ 脚本化 Provider response
-```
-
-测试文件：`tests/test_hermes_executor_compatibility.py`。
-
-脚本化 Provider 只模拟模型边界的响应对象，不执行 Tool Call、不修改消息、不接管 Loop。
-
-### 12.2 执行轨迹
-
-```text
-1. Adapter-like test constructs AIAgent with:
-   - provider=custom
-   - api_mode=chat_completions
-   - model=astra-scripted-provider
-   - enabled_toolsets=[astra_phase1_probe]
-   - Task Contract in ephemeral_system_prompt
-
-2. Real Plugin registers astra_lookup and all relevant hooks.
-
-3. Provider iteration #1 sees the tool schema and chooses:
-   astra_lookup(key="blocked")
-
-4. pre_tool_call returns block.
-   Tool handler is not called.
-   Hermes appends structured error tool result.
-
-5. Provider iteration #2 reads the error and chooses:
-   astra_lookup(key="answer")
-
-6. Real registry dispatch calls the controlled handler.
-   transform_tool_result adds ToolResultEvidence.
-   Hermes appends transformed tool result.
-
-7. Provider iteration #3 reads the evidence and returns final text.
-
-8. Hermes finalizes and persists the Session.
-```
-
-### 12.3 断言结果
-
-| 验证项 | 结果 |
-| --- | --- |
-| 指定模型配置可构造 Agent | 通过 |
-| 受控 Plugin 工具可发现 | 通过，仅暴露 `astra_lookup` |
-| 模型响应可选择并调用工具 | 通过 |
-| 调用前约束入口 | 通过，第一次调用被 `pre_tool_call` 阻断 |
-| 被阻断工具不产生副作用 | 通过，handler 总调用次数为 1 |
-| 工具执行与结果回灌 | 通过 |
-| 结构化反馈回灌 | 通过，`transform_tool_result` 注入 `ToolResultEvidence` |
-| 下一轮推理 | 通过，共 3 次 API iteration |
-| 最终结果 | `Lookup complete: value=42; structured feedback observed.` |
-| Token usage 归一化 | 通过，累计 `total_tokens=75` |
-| Session 持久化 | 通过，共 6 条消息 |
-| 持久化角色序列 | `user, assistant, tool, assistant, tool, assistant` |
-| Observation events | 3 pre API、3 post API、2 pre tool、2 post tool、1 transform、1 post LLM、Session start/end |
-| Hermes Agent Loop 修改 | 未修改 |
-
-### 12.4 测试命令与结果
-
-```text
-hermes-agent-main/scripts/run_tests.sh \
-  /Users/laosun/Desktop/Astra Agent Reliability Harness/tests/test_hermes_executor_compatibility.py -q
-
-结果：1 passed
-```
-
-同时运行 Hermes 相关现有测试：
-
-```text
-hermes-agent-main/scripts/run_tests.sh \
-  tests/test_model_tools.py \
-  tests/test_transform_tool_result_hook.py \
-  tests/hermes_cli/test_plugins.py -q
-
-结果：157 passed
-```
-
-本阶段相关测试合计：158 passed，0 failed。
-
-### 12.5 Phase 2 opt-in live Provider smoke test
-
-尚未验证：
-
-- 真实 Provider 网络请求；
-- 真实模型是否自主选择 Astra 测试工具；
-- 不同 API mode 下的同一 Bridge Plugin E2E；
-- Provider usage/cost 与账单的一致性；
-- 真实流式响应的 Adapter 事件映射。
-
-这些项目验证的是已实现 Adapter 与真实模型/Provider 的业务集成，而不是 Hermes 源码研究，因此不属于 Phase 1 关闭条件。Phase 2 的 live smoke test 应默认不运行、不阻塞普通 CI、要求显式凭证，并复用相同业务工具和稳定边界，只替换脚本化 Provider。
-
----
-
-## 13. Phase 1 CLOSED
+## 12. Phase 1 CLOSED
 
 ### 已完成内容
 
@@ -901,15 +792,13 @@ hermes-agent-main/scripts/run_tests.sh \
 - 区分 `DOC`、`COMPAT`、`NONE`、`ADAPTER`、`SHIM`；
 - 定义不泄漏 Hermes 私有对象的 Executor Adapter 建议端口；
 - 给出 Bridge Plugin 和可选 Shim 的隔离方案；
-- 完成真实 Loop 的最小兼容性实验和相关测试；
 - 记录版本、来源、检查日期和缺少 commit SHA 的限制；
 - 生成确定性源码归档和 `artifacts/hermes-source-manifest.json`。
 
-### 实际验证结果
+### 保留结论
 
 - Python 3.13.11 可导入并构造 Hermes 0.18.2；
 - 程序化 Agent、受控工具、调用前阻断、结构化 Tool Result、下一轮推理、最终回答和 Session 持久化均已跑通；
-- Observer Hooks、Plugin 注册和 Tool Result transform 的相关测试共 158 项通过；
 - 没有修改 Hermes Agent Loop；
 - 上层稳定接口设计不包含 Hermes 私有类型；
 - 源码归档和源码树的 SHA-256 已固定并可重复生成。
@@ -943,13 +832,13 @@ RuntimeInvocation
 → Neutral Trace
 ```
 
-首批实现稳定领域接口、固定 Bridge Plugin、4～6 个业务工具、正常投诉任务、最小结果验证器、持久化 exactly-once Execution 终结、交互暂停不变量、最小 Budget Ledger、Neutral Trace 和 opt-in live Provider smoke test。
+首批实现稳定领域接口、固定 Bridge Plugin、4～6 个业务工具、正常投诉任务、最小结果验证器、持久化 exactly-once Execution 终结、交互暂停不变量、最小 Budget Ledger 和 Neutral Trace。
 
 不应在 Phase 2 初期实现 GenericFinalGateShim、PreProviderBudgetShim、完整 Task Runtime、Checkpoint restart recovery、Task Rules、Task Policy、完整 Requirement Evaluators / Completion Aggregator、审批 UI、前端或大规模评估。
 
 ---
 
-## 14. 主要源码与文档证据索引
+## 13. 主要源码与文档证据索引
 
 - `hermes-agent-main/pyproject.toml`
 - `hermes-agent-main/run_agent.py`

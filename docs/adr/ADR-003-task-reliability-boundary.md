@@ -162,7 +162,7 @@ Phase 3 采用少量固定 Decision Point，不建设通用 CEP、规则 DSL、�
 - Astra Core 不依赖 Hermes 私有类型或固定错误字符串；
 - Normal completion、Runtime invariant、Task Rule 和 Policy 的职责必须分离；
 - External side effect 无法确认时必须表达为 `indeterminate`，不得伪造 exactly-once；
-- Phase 3 实现只有在全部契约文档和契约测试冻结后才能开始。
+- Phase 3 实现以已确定的契约文档为边界。
 
 ## Normative references
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from astra.phase3 import Round2Path, evaluate_round2_contract_chain
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "phase3_contract_round2.json"
 ALLOWED_POLICY_ACTIONS = {
@@ -92,45 +93,6 @@ def _effect_request(scenario: dict, contract: dict) -> dict:
     }
 
 
-def _approval_matches(contract: dict, effect: dict, approval_status: str) -> bool:
-    if approval_status != "approved":
-        return False
-    requirement = contract["approval_requirements"][0]
-    return (
-        effect["effect_intent_ref"] in requirement["effect_intent_refs"]
-        and requirement["usage_semantics"] == "single_effect_single_use"
-        and effect["task_contract_ref"]["contract_hash"] == contract["contract_hash"]
-    )
-
-
-def _evaluate(path: dict, approval_matches: bool) -> str:
-    if not path["input_complete"]:
-        return "unknown"
-    if not approval_matches:
-        return "unknown"
-    if path["operation_status"] == "confirmed":
-        return "satisfied"
-    if path["operation_status"] in {"not_started", "indeterminate"}:
-        return "unknown"
-    return "unsatisfied"
-
-
-def _policy_action(path: dict, evaluation: str, approval_matches: bool) -> str:
-    if not path["input_complete"]:
-        return "request_input"
-    if not approval_matches:
-        return "request_approval"
-    if path["operation_status"] == "indeterminate":
-        return "reconcile"
-    if evaluation == "satisfied":
-        return "complete"
-    return "continue_with_feedback"
-
-
-def _apply_decision(expected_task_version: int, current_task_version: int) -> str:
-    return "applied" if expected_task_version == current_task_version else "stale"
-
-
 def _walk_keys(value: object):
     if isinstance(value, dict):
         for key, child in value.items():
@@ -151,57 +113,35 @@ CASES = [
 
 @pytest.mark.parametrize(("scenario", "path_name", "path"), CASES)
 def test_round2_pure_contract_chain(scenario: dict, path_name: str, path: dict):
-    contract = _materialize_contract(scenario["task_contract"])
-    effect = _effect_request(scenario, contract) if path["input_complete"] else None
-    approval_matches = bool(
-        effect and _approval_matches(contract, effect, path["approval_status"])
+    result = evaluate_round2_contract_chain(
+        task_contract=scenario["task_contract"],
+        normalized_parameters=scenario["normalized_parameters"],
+        normalizer_id=scenario["normalizer"]["normalizer_id"],
+        normalizer_version=scenario["normalizer"]["normalizer_version"],
+        completion_requirement=FIXTURES["completion_requirement"],
+        path=Round2Path.model_validate(path),
+        task_id=f"task-{scenario['scenario_id']}",
+        attempt_id=f"attempt-{scenario['scenario_id']}",
+        execution_id=f"execution-{scenario['scenario_id']}",
     )
-
-    external_operation = None
-    if effect and approval_matches and path["operation_status"] != "not_started":
-        external_operation = {
-            "effect_identity": effect["effect_identity"],
-            "effect_request_hash": effect["effect_request_hash"],
-            "idempotency_key": _sha256(
-                {
-                    "effect_identity": effect["effect_identity"],
-                    "adapter_key_version": "1",
-                }
-            ),
-            "status": path["operation_status"],
-        }
-
-    evidence_snapshot = {
-        "task_contract_ref": {
-            "contract_id": contract["contract_id"],
-            "contract_version": contract["contract_version"],
-            "contract_hash": contract["contract_hash"],
-        },
-        "effect_identity": effect["effect_identity"] if effect else None,
-        "effect_request_hash": effect["effect_request_hash"] if effect else None,
-        "approval_status": path["approval_status"],
-        "external_operation": external_operation,
-    }
-    evaluation = _evaluate(path, approval_matches)
-    action = _policy_action(path, evaluation, approval_matches)
-    expected_task_version = 12
-    current_task_version = expected_task_version + path["current_task_version_offset"]
-    application = _apply_decision(expected_task_version, current_task_version)
-
-    assert evaluation == path["expected_evaluation"], path_name
-    assert action == path["expected_policy_action"], path_name
-    assert action in ALLOWED_POLICY_ACTIONS
-    assert application == path["expected_application"], path_name
-    assert evidence_snapshot["task_contract_ref"]["contract_hash"] == contract["contract_hash"]
-
-    if external_operation:
-        assert external_operation["effect_identity"] == effect["effect_identity"]
-        assert external_operation["effect_request_hash"] == effect["effect_request_hash"]
-    if action == "request_approval":
-        assert effect is not None
-        assert effect["effect_identity"].startswith("effect:sha256:")
-    if action == "complete":
-        assert evaluation == "satisfied"
+    assert result.requirement_evaluation.status.value == path["expected_evaluation"]
+    assert result.policy_action.value == path["expected_policy_action"]
+    assert result.policy_action.value in ALLOWED_POLICY_ACTIONS
+    assert result.decision_application.value == path["expected_application"]
+    assert (
+        result.evidence_snapshot.task_contract_ref.contract_hash
+        == result.task_contract.contract_hash
+    )
+    if result.external_operation is not None:
+        assert result.external_operation.effect_identity == result.effect_identity
+        assert (
+            result.external_operation.effect_request_hash
+            == result.effect_request_hash
+        )
+    if result.policy_action.value == "request_approval":
+        assert result.canonical_effect_request is not None
+    if result.policy_action.value == "complete":
+        assert result.requirement_evaluation.status.value == "satisfied"
         assert path["operation_status"] == "confirmed"
 
 

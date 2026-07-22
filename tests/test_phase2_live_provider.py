@@ -7,21 +7,19 @@ ordinary CI and still uses Mock Business Services for business side effects.
 
 from __future__ import annotations
 
-import asyncio
 import os
-import sys
 from pathlib import Path
 
 import pytest
 
-from astra.budget import BudgetLedger
-from astra.domain import RuntimeInvocation
-from astra.hermes_adapter import HermesExecutor
-from astra.mock_business import MockBusinessService
-from astra.result_validator import MinimalResultValidator
-from astra.storage import AstraStore
-from astra.tool_gateway import AstraToolGateway
-from astra.trace import NeutralTraceCollector
+from astra.phase3.completion import (
+    CompletionContract,
+    CompletionRequirement,
+    EvaluatorRef,
+)
+from astra.phase3.task_contract import TaskContract
+from astra.production import ProductionConfig, ProductionRuntime
+from astra.tool_gateway import production_tool_schema_hash
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +37,106 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _live_contracts() -> tuple[TaskContract, CompletionContract]:
+    contract = TaskContract.materialize(
+        {
+            "schema_version": "1",
+            "contract_id": "contract-live-provider-complaint",
+            "contract_version": "1",
+            "task_type": "live_provider_complaint",
+            "execution_type": "tool_execution",
+            "objective": {
+                "description": (
+                    "Customer cust-001 reports that order-001 arrived damaged. "
+                    "Create the governed complaint ticket and submit the result."
+                )
+            },
+            "subject_refs": [
+                {
+                    "authority_domain": "commerce.mock",
+                    "type": "order",
+                    "id": "order-001",
+                }
+            ],
+            "input_snapshot": {
+                "schema_id": "live.provider.complaint",
+                "schema_version": "1",
+                "values": {"order_id": "order-001"},
+                "content_hash": "sha256:live-provider-input",
+            },
+            "allowed_capabilities": [
+                {
+                    "capability_id": "complaints.integration",
+                    "capability_version": "1",
+                }
+            ],
+            "resolved_tools": [
+                {
+                    "tool_name": name,
+                    "tool_version": "1",
+                    "schema_hash": production_tool_schema_hash(name),
+                    "capability_ref": "complaints.integration@1",
+                    "access_mode": "effect" if name == "create_complaint_ticket" else "read",
+                }
+                for name in (
+                    "get_order",
+                    "search_policy",
+                    "create_complaint_ticket",
+                )
+            ],
+            "constraints": [],
+            "authorized_effects": [
+                {
+                    "effect_intent_id": "create-live-provider-complaint",
+                    "effect_type": "support.complaint_ticket",
+                    "effect_type_version": "1",
+                    "authority_domain": "support.mock",
+                    "subject_ref": {
+                        "authority_domain": "commerce.mock",
+                        "type": "order",
+                        "id": "order-001",
+                    },
+                    "parameter_constraints": {},
+                    "max_confirmed_occurrences": 1,
+                }
+            ],
+            "approval_requirements": [],
+            "completion_contract_ref": {
+                "contract_id": "completion-live-provider-complaint",
+                "contract_version": "1",
+            },
+            "limits": {
+                "max_attempts": 1,
+                "task_deadline": "2099-01-01T00:00:00Z",
+                "max_executions_per_attempt": 2,
+                "max_feedback_cycles": 0,
+                "max_reconcile_cycles": 0,
+                "max_agent_steps": 12,
+            },
+        }
+    )
+    completion = CompletionContract(
+        contract_id="completion-live-provider-complaint",
+        contract_version="1",
+        task_type="live_provider_complaint",
+        requirements=(
+            CompletionRequirement(
+                requirement_id="confirmed-live-provider-effect",
+                description="The complaint effect is authoritatively confirmed.",
+                evaluator=EvaluatorRef(
+                    evaluator_id="astra.authorized_effect_confirmed",
+                    evaluator_version="1",
+                ),
+                configuration={
+                    "effect_intent_ref": "create-live-provider-complaint"
+                },
+                required_evidence=("external_operation", "business_state"),
+            ),
+        ),
+    )
+    return contract, completion
+
+
 def test_live_provider_normal_complaint_smoke(tmp_path, monkeypatch):
     hermes_home = tmp_path / "hermes-home"
     hermes_home.mkdir()
@@ -48,52 +146,11 @@ def test_live_provider_normal_complaint_smoke(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("HERMES_ENABLE_PROJECT_PLUGINS", "1")
-    monkeypatch.chdir(WORKSPACE_ROOT)
-
-    sys.path.insert(0, str(HERMES_ROOT))
-    try:
-        import hermes_cli.plugins as plugins
-
-        plugins._plugin_manager = plugins.PluginManager()
-    finally:
-        sys.path.remove(str(HERMES_ROOT))
-
-    store = AstraStore(tmp_path / "live-provider.sqlite3")
-    business = MockBusinessService(store)
-    business.seed_normal_complaint()
-    gateway = AstraToolGateway(store, business)
-    executor = HermesExecutor(
+    database = tmp_path / "live-provider.sqlite3"
+    contract, completion = _live_contracts()
+    config = ProductionConfig(
+        database_path=database,
         hermes_root=HERMES_ROOT,
-        store=store,
-        gateway=gateway,
-        validator=MinimalResultValidator(store, business),
-        budget=BudgetLedger(store),
-        trace=NeutralTraceCollector(store),
-    )
-    invocation = RuntimeInvocation(
-        execution_id="exec-live-provider",
-        task_id="task-live-provider",
-        attempt_id="attempt-live-provider",
-        user_request=(
-            "Customer cust-001 reports that order-001 arrived damaged after the "
-            "normal return window. Investigate the applicable policy, create a "
-            "complaint ticket if supported, and submit a result with receipt evidence."
-        ),
-        task_contract={
-            "task_type": "complaint_resolution",
-            "execution_type": "tool_execution",
-            "completion_requirements": [
-                "complaint ticket exists for cust-001 and order-001",
-                "the result cites execution receipts",
-            ],
-        },
-        allowed_tools=(
-            "get_customer",
-            "get_order",
-            "search_policy",
-            "create_complaint_ticket",
-            "get_complaint_ticket",
-        ),
         provider_config={
             "base_url": os.environ["ASTRA_LIVE_BASE_URL"],
             "api_key": os.environ["ASTRA_LIVE_API_KEY"],
@@ -103,19 +160,26 @@ def test_live_provider_normal_complaint_smoke(tmp_path, monkeypatch):
             ),
             "model": os.environ["ASTRA_LIVE_MODEL"],
         },
-        limits={
-            "max_agent_steps": 12,
-            "budget_mode": "conservative_limit",
-            "provider_request_limit": 12,
-        },
+        hermes_session_database_path=database.with_suffix(".hermes.sqlite3"),
     )
-    events = []
+    with ProductionRuntime(config) as app:
+        app.business.seed_normal_complaint()
+        submission = app.submit_task(
+            command_id="submit:live-provider",
+            task_id="task:live-provider",
+            contract=contract,
+            completion_contract=completion,
+        )
+        import asyncio
 
-    async def sink(event):
-        events.append(event)
-
-    result = asyncio.run(executor.execute(invocation, sink))
-    assert result.task_outcome_validated is True
-    assert result.result_receipt and result.result_receipt["valid"] is True
-    assert len(business.snapshot()["complaint_tickets"]) == 1
-    assert any(event.event_type == "ResultValidation" for event in events)
+        result = asyncio.run(app.run_worker_once())
+        assert result is not None
+        assert app.store.query_one(
+            "SELECT state FROM phase3_tasks WHERE task_id = ?",
+            (submission.task_id,),
+        )["state"] == "succeeded"
+        assert len(app.business.snapshot()["complaint_tickets"]) == 1
+        assert app.store.query_one(
+            "SELECT status FROM phase3_external_operations WHERE task_id = ?",
+            (submission.task_id,),
+        )["status"] == "confirmed"

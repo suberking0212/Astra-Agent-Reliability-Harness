@@ -16,16 +16,18 @@ from .approval import (
 )
 from .canonical import sha256_digest
 from .completion import (
+    AuthorizedEffectConfirmedEvaluator,
+    BusinessObservation,
     CompletionContract,
     CompletionRequirement,
     CompletionStatus,
     CompletionValidationResult,
-    EvaluatorRef,
     EvidenceSnapshot,
     RequirementEvaluation,
-    RequirementStatus,
+    RequirementEvaluatorRegistry,
     SubmittedResult,
     aggregate_completion,
+    build_evidence_snapshot_identity,
 )
 from .effects import (
     CanonicalEffectRequest,
@@ -109,6 +111,7 @@ def evaluate_round2_contract_chain(
     normalized_parameters: Mapping[str, Any],
     normalizer_id: str,
     normalizer_version: str,
+    completion_requirement: Mapping[str, Any],
     path: Round2Path | Mapping[str, Any],
     task_id: str = "task-round2",
     attempt_id: str = "attempt-round2",
@@ -191,51 +194,112 @@ def evaluate_round2_contract_chain(
             ),
             created_at=_FIXED_TIME,
         )
+        if operation_status == ExternalOperationStatus.CONFIRMED:
+            operation = operation.model_copy(
+                update={"external_operation_id": "round2-business-object"}
+            )
+
+    observation = None
+    if operation is not None and operation_status == ExternalOperationStatus.CONFIRMED:
+        observation = BusinessObservation.materialize(
+            observation_id="observation:" + operation.operation_id,
+            observation_version=1,
+            task_id=task_id,
+            operation_id=operation.operation_id,
+            authority_domain=operation.authority_domain,
+            effect_identity=operation.effect_identity,
+            effect_request_hash=operation.effect_request_hash,
+            external_object_id="round2-business-object",
+            state=dict(normalized_parameters),
+        )
+
+    authoritative_versions = {
+        "task": {"task_id": task_id, "version": expected_task_version},
+        "contract": contract.ref.model_dump(mode="json"),
+        "attempt": {"attempt_id": attempt_id, "version": expected_attempt_version},
+        "executions": {execution_id: sha256_digest(path)},
+        "interactions": {},
+        "approvals": (
+            {
+                resolution.approval_resolution_id: sha256_digest(resolution)
+            }
+            if resolution
+            else {}
+        ),
+        "external_operations": (
+            {
+                operation.operation_id: {
+                    "version": operation.version,
+                    "status": operation.status.value,
+                    "content_hash": sha256_digest(operation),
+                }
+            }
+            if operation
+            else {}
+        ),
+        "canonical_effects": (
+            {effect.effect_identity: effect.effect_request_hash} if effect else {}
+        ),
+        "receipts": {},
+        "observations": (
+            {
+                observation.observation_id: {
+                    "version": observation.observation_version,
+                    "content_hash": observation.content_hash,
+                }
+            }
+            if observation
+            else {}
+        ),
+        "fact_watermark": 1,
+        "completion_refs": {},
+    }
+    collection_trigger_id = "submitted-result:" + task_id
+    authoritative_versions_hash, evidence_snapshot_id = (
+        build_evidence_snapshot_identity(
+            task_id=task_id,
+            collection_trigger_id=collection_trigger_id,
+            authoritative_versions=authoritative_versions,
+            collector_version="1",
+        )
+    )
 
     snapshot = EvidenceSnapshot.materialize(
-        evidence_snapshot_id="snapshot:"
-        + sha256_digest(
-            {
-                "task_id": task_id,
-                "path": path.model_dump(mode="json", exclude_none=True),
-                "contract_hash": contract.contract_hash,
-            }
-        ),
+        evidence_snapshot_id=evidence_snapshot_id,
         task_id=task_id,
         attempt_id=attempt_id,
+        collection_trigger_id=collection_trigger_id,
+        authoritative_versions_hash=authoritative_versions_hash,
+        authoritative_versions=authoritative_versions,
         task_version=expected_task_version,
         attempt_version=expected_attempt_version,
         task_contract_ref=contract.ref,
+        execution_refs={execution_id: sha256_digest(path)},
         receipt_refs=(),
         receipt_hashes={},
         interaction_refs={},
+        interaction_states={},
         external_operations=(operation,) if operation else (),
+        canonical_effects=(effect,) if effect else (),
         effect_refs=(
             {effect.effect_identity: effect.effect_request_hash} if effect else {}
         ),
         approval_refs=(
-            {resolution.approval_resolution_id: resolution.resolution_version}
+            {resolution.approval_resolution_id: sha256_digest(resolution)}
             if resolution
             else {}
         ),
+        business_observations=(observation,) if observation else (),
         business_observation_refs=(
-            ("observation:" + operation.operation_id,)
-            if operation_status == ExternalOperationStatus.CONFIRMED
+            (observation.observation_id,)
+            if observation is not None
             else ()
         ),
+        completion_refs={},
         fact_watermark=1,
         collector_version="1",
         created_at=_FIXED_TIME,
     )
-
-    if not path.input_complete or not approval_matched:
-        requirement_status = RequirementStatus.UNKNOWN
-    elif operation_status == ExternalOperationStatus.CONFIRMED:
-        requirement_status = RequirementStatus.SATISFIED
-    elif operation_status in {None, ExternalOperationStatus.INDETERMINATE}:
-        requirement_status = RequirementStatus.UNKNOWN
-    else:
-        requirement_status = RequirementStatus.UNSATISFIED
 
     submitted = SubmittedResult(
         submitted_result_id="submitted-result:" + task_id,
@@ -244,38 +308,29 @@ def evaluate_round2_contract_chain(
         execution_id=execution_id,
         outcome={},
     )
-    requirement = CompletionRequirement(
-        requirement_id="authorized_effect_confirmed",
-        description="The authorized effect is confirmed by authoritative evidence.",
-        evaluator=EvaluatorRef(
-            evaluator_id="astra.authorized_effect_confirmed",
-            evaluator_version="1",
-        ),
-        required_evidence=("external_operation",),
+    requirement_payload = dict(completion_requirement)
+    requirement_payload.setdefault(
+        "configuration", {"effect_intent_ref": intent.effect_intent_id}
     )
-    evaluation = RequirementEvaluation(
-        evaluation_id="evaluation:"
-        + sha256_digest(
-            {
-                "requirement_id": requirement.requirement_id,
-                "submitted_result_id": submitted.submitted_result_id,
-                "evidence_snapshot_id": snapshot.evidence_snapshot_id,
-            }
-        ),
-        requirement_id=requirement.requirement_id,
-        evaluator_id=requirement.evaluator.evaluator_id,
-        evaluator_version=requirement.evaluator.evaluator_version,
-        submitted_result_id=submitted.submitted_result_id,
-        evidence_snapshot_id=snapshot.evidence_snapshot_id,
-        status=requirement_status,
-        evidence_refs=(operation.operation_id,) if operation else (),
+    requirement_payload["required_evidence"] = tuple(
+        dict.fromkeys(
+            (
+                *requirement_payload.get("required_evidence", ()),
+                "external_operation",
+                "business_state",
+            )
+        )
     )
+    requirement = CompletionRequirement.model_validate(requirement_payload)
     completion_contract = CompletionContract(
         contract_id=contract.completion_contract_ref.contract_id,
         contract_version=contract.completion_contract_ref.contract_version,
         task_type=contract.task_type,
         requirements=(requirement,),
     )
+    evaluator_registry = RequirementEvaluatorRegistry()
+    evaluator_registry.register(AuthorizedEffectConfirmedEvaluator())
+    evaluation = evaluator_registry.evaluate(requirement, submitted, snapshot)
     completion = aggregate_completion(
         completion_contract, submitted, snapshot, (evaluation,)
     )
@@ -383,6 +438,7 @@ def validate_round2_fixture(fixture: Mapping[str, Any]) -> Round2ValidationRepor
                 normalized_parameters=scenario["normalized_parameters"],
                 normalizer_id=scenario["normalizer"]["normalizer_id"],
                 normalizer_version=scenario["normalizer"]["normalizer_version"],
+                completion_requirement=fixture["completion_requirement"],
                 path=path,
                 task_id=f"task-{scenario_id}",
                 attempt_id=f"attempt-{scenario_id}",

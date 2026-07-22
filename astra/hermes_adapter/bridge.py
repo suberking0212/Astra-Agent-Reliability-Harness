@@ -6,68 +6,11 @@ import json
 from typing import Any
 
 from ..domain import InteractionKind
+from ..tool_gateway import BUSINESS_TOOL_SCHEMAS
 from .context import registry
 
 
-BUSINESS_SCHEMAS = {
-    "get_customer": {
-        "description": "Look up a customer by customer_id.",
-        "parameters": {
-            "type": "object",
-            "properties": {"customer_id": {"type": "string"}},
-            "required": ["customer_id"],
-            "additionalProperties": False,
-        },
-    },
-    "get_order": {
-        "description": "Look up an order by order_id.",
-        "parameters": {
-            "type": "object",
-            "properties": {"order_id": {"type": "string"}},
-            "required": ["order_id"],
-            "additionalProperties": False,
-        },
-    },
-    "search_policy": {
-        "description": "Search complaint and after-sales policies.",
-        "parameters": {
-            "type": "object",
-            "properties": {"query": {"type": "string"}},
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-    },
-    "create_complaint_ticket": {
-        "description": "Create one idempotent complaint ticket.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "customer_id": {"type": "string"},
-                "order_id": {"type": "string"},
-                "reason": {"type": "string"},
-                "resolution": {"type": "string"},
-                "idempotency_key": {"type": "string"},
-            },
-            "required": [
-                "customer_id",
-                "order_id",
-                "reason",
-                "resolution",
-                "idempotency_key",
-            ],
-            "additionalProperties": False,
-        },
-    },
-    "get_complaint_ticket": {
-        "description": "Read back a complaint ticket for business-state verification.",
-        "parameters": {
-            "type": "object",
-            "properties": {"ticket_id": {"type": "string"}},
-            "required": ["ticket_id"],
-            "additionalProperties": False,
-        },
-    },
-}
+BUSINESS_SCHEMAS = BUSINESS_TOOL_SCHEMAS
 
 
 def _active(kwargs: dict[str, Any]):
@@ -103,13 +46,10 @@ def _request_approval(args, **kwargs):
     context = _active(kwargs)
     if context is None:
         return json.dumps({"ok": False, "error": {"type": "missing_context"}})
-    return context.request_interaction(
-        InteractionKind.APPROVAL,
+    return context.request_approval(
         str(args["prompt"]),
-        {
-            "tool_name": args.get("tool_name"),
-            "arguments": args.get("arguments") or {},
-        },
+        args.get("tool_name"),
+        args.get("arguments") or {},
     )
 
 

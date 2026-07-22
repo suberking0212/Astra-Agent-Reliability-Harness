@@ -17,7 +17,9 @@ from ..domain import (
     RuntimeInvocation,
     ToolInvocationContext,
 )
+from ..phase3.effects import CanonicalEffectRequest
 from ..result_validator import MinimalResultValidator
+from ..runtime import TaskRuntime
 from ..storage import AstraStore
 from ..tool_gateway import AstraToolGateway
 from ..trace import NeutralTraceCollector
@@ -33,6 +35,7 @@ class ExecutionBridgeContext:
         validator: MinimalResultValidator,
         budget: BudgetLedger,
         trace: NeutralTraceCollector,
+        runtime: TaskRuntime,
     ) -> None:
         self.invocation = invocation
         self.store = store
@@ -40,6 +43,9 @@ class ExecutionBridgeContext:
         self.validator = validator
         self.budget = budget
         self.trace = trace
+        self.runtime = runtime
+        if self.runtime.store is not store:
+            raise ValueError("ExecutionBridgeContext must share AstraStore authority")
         self.trace_id = str(uuid4())
         self.events: list[ExecutionEvent] = []
         self.submitted_result: Mapping[str, Any] | None = None
@@ -75,14 +81,16 @@ class ExecutionBridgeContext:
         tool_call_id: str | None,
     ) -> str:
         args = dict(arguments)
-        idempotency_key = args.pop("idempotency_key", None)
         context = ToolInvocationContext(
             execution_id=self.invocation.execution_id,
             task_id=self.invocation.task_id,
             attempt_id=self.invocation.attempt_id,
             tool_call_id=tool_call_id or str(uuid4()),
             allowed_tools=self.invocation.allowed_tools,
-            idempotency_key=idempotency_key,
+            # This field is intentionally empty at the Hermes boundary. The
+            # Gateway derives the formal key only after canonical identity and
+            # exact approval have been established.
+            idempotency_key=None,
         )
         self.emit(
             "ToolCall",
@@ -90,6 +98,21 @@ class ExecutionBridgeContext:
             {"tool_name": tool_name, "arguments": args},
         )
         result = self.gateway.invoke(context, tool_name, args)
+        if result.error and result.error.get("type") == "approval_required":
+            effect_payload = result.error.get("canonical_effect_request")
+            if isinstance(effect_payload, Mapping):
+                interaction = self._request_exact_approval(
+                    CanonicalEffectRequest.model_validate(effect_payload)
+                )
+                result = result.model_copy(
+                    update={
+                        "error": {
+                            **dict(result.error),
+                            "suspension_requested": True,
+                            "interaction": interaction.model_dump(mode="json"),
+                        }
+                    }
+                )
         self.emit(
             "ToolResult",
             "astra_tool_gateway",
@@ -102,6 +125,78 @@ class ExecutionBridgeContext:
         )
         return result.model_dump_json()
 
+    def request_approval(
+        self,
+        prompt: str,
+        tool_name: str | None,
+        arguments: Mapping[str, Any],
+    ) -> str:
+        """Route a proactive Hermes approval request through exact normalization."""
+
+        if not tool_name:
+            return self.request_interaction(
+                InteractionKind.USER_INPUT,
+                prompt,
+                {
+                    "requested_interaction_kind": InteractionKind.APPROVAL.value,
+                    "reason_code": "exact_effect_request_required",
+                    "required_information": ["tool_name", "arguments"],
+                },
+            )
+        context = ToolInvocationContext(
+            execution_id=self.invocation.execution_id,
+            task_id=self.invocation.task_id,
+            attempt_id=self.invocation.attempt_id,
+            tool_call_id="approval-normalization:" + str(uuid4()),
+            allowed_tools=self.invocation.allowed_tools,
+        )
+        try:
+            effect = self.gateway.canonicalize_effect_request(
+                context, tool_name, arguments
+            )
+        except (PermissionError, RuntimeError, ValueError):
+            return self.request_interaction(
+                InteractionKind.USER_INPUT,
+                prompt,
+                {
+                    "requested_interaction_kind": InteractionKind.APPROVAL.value,
+                    "reason_code": "exact_effect_request_required",
+                    "required_information": ["canonical_effect_request"],
+                    "tool_name": tool_name,
+                    "arguments": dict(arguments),
+                },
+            )
+        interaction = self._request_exact_approval(effect)
+        return json.dumps(
+            {
+                "ok": True,
+                "suspension_requested": True,
+                "interaction": interaction.model_dump(mode="json"),
+            },
+            ensure_ascii=False,
+        )
+
+    def _request_exact_approval(
+        self, effect: CanonicalEffectRequest
+    ) -> InteractionRequest:
+        with self._lock:
+            if self.interaction is None:
+                self.interaction = self.runtime.request_approval(
+                    execution_id=self.invocation.execution_id,
+                    effect=effect,
+                )
+                self.emit(
+                    "InteractionRequest",
+                    "astra_task_runtime",
+                    self.interaction.model_dump(mode="json"),
+                )
+            elif self.interaction.kind != InteractionKind.APPROVAL:
+                raise RuntimeError("Execution already owns a different Interaction")
+            interaction = self.interaction
+        if self._interrupt is not None:
+            self._interrupt("astra_waiting_approval")
+        return interaction
+
     def request_interaction(
         self,
         kind: InteractionKind,
@@ -110,10 +205,8 @@ class ExecutionBridgeContext:
     ) -> str:
         with self._lock:
             if self.interaction is None:
-                self.interaction = self.store.request_interaction(
+                self.interaction = self.runtime.request_interaction(
                     execution_id=self.invocation.execution_id,
-                    task_id=self.invocation.task_id,
-                    attempt_id=self.invocation.attempt_id,
                     kind=kind,
                     prompt=prompt,
                     payload=payload,
@@ -124,7 +217,7 @@ class ExecutionBridgeContext:
                     self.interaction.model_dump(mode="json"),
                 )
         if self._interrupt is not None:
-            self._interrupt(f"astra_waiting_{kind.value}")
+            self._interrupt(f"astra_waiting_{self.interaction.kind.value}")
         return json.dumps(
             {
                 "ok": True,
@@ -208,4 +301,3 @@ class ExecutionContextRegistry:
 
 
 registry = ExecutionContextRegistry()
-

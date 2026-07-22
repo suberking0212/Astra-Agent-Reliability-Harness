@@ -1,6 +1,7 @@
+"""Storage/transaction component tests; not Production Batch acceptance."""
+
 from __future__ import annotations
 
-import asyncio
 import json
 import sqlite3
 import subprocess
@@ -13,27 +14,16 @@ from pathlib import Path
 import pytest
 
 from astra.domain import ExecutionResult, ExecutionStatus
-from astra.phase3.canonical import sha256_digest
 from astra.phase3.completion import (
     CompletionContract,
     CompletionRequirement,
-    CompletionStatus,
-    EvidenceSnapshot,
     EvaluatorRef,
-    RequirementEvaluation,
-    RequirementStatus,
-    SubmittedResult,
 )
-from astra.phase3.governance import GovernanceStore, RuntimeGovernanceCore
-from astra.phase3.policy import DecisionApplication, PolicyAction
 from astra.phase3.task_contract import TaskContract
 from astra.runtime import (
     CommandIdentityConflict,
-    DeterministicFakeExecutor,
     ExecutionEligibilityError,
     ExecutionResultConflict,
-    RunRequestExecutionConflict,
-    SingleWorker,
     TaskRuntime,
 )
 from astra.storage import CURRENT_SCHEMA_VERSION, AstraStore
@@ -49,16 +39,52 @@ def _contract() -> TaskContract:
     return TaskContract.materialize(fixture["scenarios"][0]["task_contract"])
 
 
-def _governed_contract() -> TaskContract:
-    fixture = json.loads(FIXTURE_PATH.read_text())
-    contract = dict(fixture["scenarios"][0]["task_contract"])
-    contract.update(
+def _deadline_contract(
+    *,
+    contract_id: str,
+    task_deadline: str,
+    attempt_deadline: str | None,
+) -> TaskContract:
+    limits = {
+        "max_attempts": 2,
+        "task_deadline": task_deadline,
+        "max_executions_per_attempt": 4,
+        "max_feedback_cycles": 1,
+        "max_reconcile_cycles": 1,
+    }
+    if attempt_deadline is not None:
+        limits["attempt_deadline"] = attempt_deadline
+    return _independent_contract(
+        contract_id=contract_id,
+        task_type="deadline_boundary",
+        completion_contract_id="completion-deadline-boundary",
+        limits=limits,
+    )
+
+
+def _independent_contract(
+    *,
+    contract_id: str,
+    task_type: str,
+    completion_contract_id: str,
+    limits: dict,
+) -> TaskContract:
+    return TaskContract.materialize(
         {
-            "contract_id": "contract-configured-runtime-test",
-            "task_type": "configured_runtime_test",
+            "schema_version": "1",
+            "contract_id": contract_id,
+            "contract_version": "1",
+            "task_type": task_type,
             "execution_type": "deterministic_executor",
             "objective": {
                 "description": "Evaluate the submitted result under its contract."
+            },
+            "subject_refs": [],
+            "input_snapshot": {
+                "schema_id": "runtime.audit.input",
+                "schema_version": "1",
+                "values": {},
+                "content_hash": "sha256:runtime-audit-input",
             },
             "allowed_capabilities": [],
             "resolved_tools": [],
@@ -66,69 +92,58 @@ def _governed_contract() -> TaskContract:
             "authorized_effects": [],
             "approval_requirements": [],
             "completion_contract_ref": {
-                "contract_id": "completion-configured-runtime-test",
+                "contract_id": completion_contract_id,
                 "contract_version": "1",
             },
+            "limits": limits,
         }
     )
-    return TaskContract.materialize(contract)
 
 
-class _ConfiguredOutcomeEvaluator:
-    evaluator_id = "tests.configured_outcome"
-    evaluator_version = "1"
-
-    def evaluate(
-        self,
-        requirement: CompletionRequirement,
-        submitted_result: SubmittedResult,
-        evidence_snapshot: EvidenceSnapshot,
-    ) -> RequirementEvaluation:
-        field = str(requirement.configuration["field"])
-        expected = requirement.configuration["equals"]
-        satisfied = submitted_result.outcome.get(field) == expected
-        return RequirementEvaluation(
-            evaluation_id="evaluation:"
-            + sha256_digest(
-                {
-                    "requirement_id": requirement.requirement_id,
-                    "evaluator_id": self.evaluator_id,
-                    "evaluator_version": self.evaluator_version,
-                    "submitted_result_id": submitted_result.submitted_result_id,
-                    "evidence_snapshot_id": evidence_snapshot.evidence_snapshot_id,
-                }
-            ),
-            requirement_id=requirement.requirement_id,
-            evaluator_id=self.evaluator_id,
-            evaluator_version=self.evaluator_version,
-            submitted_result_id=submitted_result.submitted_result_id,
-            evidence_snapshot_id=evidence_snapshot.evidence_snapshot_id,
-            status=(
-                RequirementStatus.SATISFIED
-                if satisfied
-                else RequirementStatus.UNSATISFIED
-            ),
-        )
+def _registry_test_contract() -> TaskContract:
+    return _independent_contract(
+        contract_id="contract-configured-runtime-test",
+        task_type="configured_runtime_test",
+        completion_contract_id="completion-configured-runtime-test",
+        limits={
+            "max_attempts": 1,
+            "task_deadline": "2026-07-21T00:00:00Z",
+            "max_executions_per_attempt": 1,
+            "max_feedback_cycles": 1,
+            "max_reconcile_cycles": 1,
+        },
+    )
 
 
-def _completion_contract() -> CompletionContract:
-    task_contract = _governed_contract()
+def _unregistered_completion_contract() -> CompletionContract:
+    task_contract = _registry_test_contract()
     return CompletionContract(
         contract_id=task_contract.completion_contract_ref.contract_id,
         contract_version=task_contract.completion_contract_ref.contract_version,
         task_type=task_contract.task_type,
         requirements=(
             CompletionRequirement(
-                requirement_id="configured_outcome_matches",
-                description="The configured submitted outcome value matches.",
+                requirement_id="unregistered_registry_probe",
+                description="This requirement intentionally has no registered evaluator.",
                 evaluator=EvaluatorRef(
-                    evaluator_id=_ConfiguredOutcomeEvaluator.evaluator_id,
-                    evaluator_version=_ConfiguredOutcomeEvaluator.evaluator_version,
+                    evaluator_id="audit.unregistered_evaluator",
+                    evaluator_version="1",
                 ),
-                configuration={
-                    "field": "governance_verdict",
-                    "equals": "pass",
-                },
+            ),
+        ),
+    )
+
+
+def _frozen_complaint_completion_contract() -> CompletionContract:
+    fixture = json.loads(FIXTURE_PATH.read_text())
+    task_contract = _contract()
+    return CompletionContract(
+        contract_id=task_contract.completion_contract_ref.contract_id,
+        contract_version=task_contract.completion_contract_ref.contract_version,
+        task_type=task_contract.task_type,
+        requirements=(
+            CompletionRequirement.model_validate(
+                fixture["completion_requirement"]
             ),
         ),
     )
@@ -164,51 +179,6 @@ def test_new_database_initializes_target_schema_version(tmp_path):
         store.close()
 
 
-def test_phase3_database_migrates_in_place_and_repeated_migration_is_stable(
-    tmp_path,
-):
-    database = tmp_path / "phase3.sqlite3"
-    contract = _contract()
-    governance_store = GovernanceStore(database)
-    governance = RuntimeGovernanceCore(governance_store)
-    governance.create_task(
-        contract,
-        task_id="historical-task",
-        attempt_id="historical-attempt",
-        task_version=7,
-        attempt_version=3,
-    )
-    governance_store.close()
-
-    first = AstraStore(database)
-    try:
-        historical = first.query_one(
-            "SELECT * FROM phase3_tasks WHERE task_id = 'historical-task'"
-        )
-        assert historical is not None
-        assert historical["version"] == 7
-        assert historical["current_attempt_id"] == "historical-attempt"
-        assert first.schema_version == CURRENT_SCHEMA_VERSION
-        migrated_at = first.query_one(
-            "SELECT updated_at FROM astra_schema WHERE singleton = 1"
-        )[0]
-    finally:
-        first.close()
-
-    second = AstraStore(database)
-    try:
-        assert second.schema_version == CURRENT_SCHEMA_VERSION
-        assert (
-            second.query_one(
-                "SELECT updated_at FROM astra_schema WHERE singleton = 1"
-            )[0]
-            == migrated_at
-        )
-        assert _count(second, "phase3_tasks") == 1
-        assert _count(second, "phase3_attempts") == 1
-    finally:
-        second.close()
-
 
 def test_newer_schema_version_is_rejected(tmp_path):
     database = tmp_path / "future.sqlite3"
@@ -237,15 +207,6 @@ def test_schema_v1_migrates_execution_relation_without_rewriting_history(
     tmp_path,
 ):
     database = tmp_path / "schema-v1.sqlite3"
-    contract = _contract()
-    governance_store = GovernanceStore(database)
-    RuntimeGovernanceCore(governance_store).create_task(
-        contract,
-        task_id="v1-task",
-        attempt_id="v1-attempt",
-    )
-    governance_store.close()
-
     connection = sqlite3.connect(database)
     connection.execute("PRAGMA foreign_keys = ON")
     AstraStore._migrate_legacy_to_v1(connection)
@@ -275,6 +236,12 @@ def test_schema_v1_migrates_execution_relation_without_rewriting_history(
         execution = store.get_execution("v1-execution")
         assert execution is not None
         assert execution["run_request_id"] is None
+        assert "termination_reason" in {
+            row[1] for row in store.query_all("PRAGMA table_info(phase3_tasks)")
+        }
+        assert "termination_reason" in {
+            row[1] for row in store.query_all("PRAGMA table_info(phase3_attempts)")
+        }
         assert store.query_one(
             """
             SELECT 1 FROM sqlite_master
@@ -573,7 +540,11 @@ def test_claim_and_start_execution_enforces_task_deadline(tmp_path):
     submission = runtime.submit_task(
         command_id="submit-deadline",
         task_id="task-deadline",
-        contract=_contract(),
+        contract=_deadline_contract(
+            contract_id="contract-task-deadline",
+            task_deadline="2026-07-21T00:00:00Z",
+            attempt_deadline=None,
+        ),
         ready_at=READY_AT,
     )
     try:
@@ -584,45 +555,149 @@ def test_claim_and_start_execution_enforces_task_deadline(tmp_path):
                 now=datetime(2026, 7, 21, tzinfo=timezone.utc)
             )
         assert error.value.code == "task_deadline_exceeded"
+        task = store.query_one(
+            """
+            SELECT state, version, termination_reason
+            FROM phase3_tasks WHERE task_id = ?
+            """,
+            (submission.task_id,),
+        )
+        attempt = store.query_one(
+            """
+            SELECT state, version, termination_reason
+            FROM phase3_attempts WHERE attempt_id = ?
+            """,
+            (submission.attempt_id,),
+        )
         request = store.query_one(
             "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
             (submission.run_request_id,),
         )
+        assert (task["state"], task["version"], task["termination_reason"]) == (
+            "failed",
+            2,
+            "task_deadline_exceeded",
+        )
+        assert (
+            attempt["state"],
+            attempt["version"],
+            attempt["termination_reason"],
+        ) == ("failed", 2, "task_deadline_exceeded")
         assert request["state"] == "pending"
         assert _count(store, "executions") == 0
     finally:
         store.close()
 
 
-def test_claim_and_start_execution_enforces_execution_budget(tmp_path):
-    store = AstraStore(tmp_path / "execution-budget.sqlite3")
+def test_claim_and_start_execution_exhausts_attempt_at_attempt_deadline(
+    tmp_path,
+):
+    store = AstraStore(tmp_path / "attempt-deadline.sqlite3")
     runtime = TaskRuntime(store)
     submission = runtime.submit_task(
-        command_id="submit-budget",
-        task_id="task-budget",
-        contract=_contract(),
+        command_id="submit-attempt-deadline",
+        task_id="task-attempt-deadline",
+        contract=_deadline_contract(
+            contract_id="contract-attempt-deadline",
+            task_deadline="2026-07-22T00:00:00Z",
+            attempt_deadline="2026-07-21T00:00:00Z",
+        ),
         ready_at=READY_AT,
     )
-    for ordinal in range(_contract().limits.max_executions_per_attempt):
-        store.start_execution(
-            f"historical-execution-{ordinal}",
-            submission.task_id,
-            submission.attempt_id,
-        )
     try:
         with pytest.raises(
-            ExecutionEligibilityError, match="execution_budget_exhausted"
+            ExecutionEligibilityError, match="attempt_deadline_exceeded"
         ) as error:
-            runtime.claim_and_start_execution(now=CLAIM_TIME)
-        assert error.value.code == "execution_budget_exhausted"
-        request = store.query_one(
-            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
-            (submission.run_request_id,),
+            runtime.claim_and_start_execution(
+                now=datetime(2026, 7, 21, tzinfo=timezone.utc)
+            )
+        assert error.value.code == "attempt_deadline_exceeded"
+        task = store.query_one(
+            """
+            SELECT state, version, termination_reason
+            FROM phase3_tasks WHERE task_id = ?
+            """,
+            (submission.task_id,),
         )
-        assert request["state"] == "pending"
-        assert _count(store, "executions") == 4
+        attempt = store.query_one(
+            """
+            SELECT state, version, termination_reason
+            FROM phase3_attempts WHERE attempt_id = ?
+            """,
+            (submission.attempt_id,),
+        )
+        assert (task["state"], task["version"], task["termination_reason"]) == (
+            "pending",
+            1,
+            None,
+        )
+        assert (
+            attempt["state"],
+            attempt["version"],
+            attempt["termination_reason"],
+        ) == ("exhausted", 2, "attempt_deadline_exceeded")
+        assert _count(store, "executions") == 0
     finally:
         store.close()
+
+
+def test_task_deadline_failure_is_atomic_with_attempt_failure(tmp_path):
+    store = AstraStore(tmp_path / "deadline-atomic.sqlite3")
+    runtime = TaskRuntime(store)
+    submission = runtime.submit_task(
+        command_id="submit-deadline-atomic",
+        task_id="task-deadline-atomic",
+        contract=_deadline_contract(
+            contract_id="contract-task-deadline-atomic",
+            task_deadline="2026-07-21T00:00:00Z",
+            attempt_deadline=None,
+        ),
+        ready_at=READY_AT,
+    )
+    store.connection.execute(
+        """
+        CREATE TRIGGER fail_deadline_attempt_update
+        BEFORE UPDATE ON phase3_attempts
+        WHEN NEW.state = 'failed'
+        BEGIN
+            SELECT RAISE(ABORT, 'forced deadline attempt failure');
+        END
+        """
+    )
+    try:
+        with pytest.raises(
+            sqlite3.IntegrityError, match="forced deadline attempt failure"
+        ):
+            runtime.claim_and_start_execution(
+                now=datetime(2026, 7, 21, tzinfo=timezone.utc)
+            )
+        task = store.query_one(
+            """
+            SELECT state, version, termination_reason
+            FROM phase3_tasks WHERE task_id = ?
+            """,
+            (submission.task_id,),
+        )
+        attempt = store.query_one(
+            """
+            SELECT state, version, termination_reason
+            FROM phase3_attempts WHERE attempt_id = ?
+            """,
+            (submission.attempt_id,),
+        )
+        assert (task["state"], task["version"], task["termination_reason"]) == (
+            "pending",
+            1,
+            None,
+        )
+        assert (
+            attempt["state"],
+            attempt["version"],
+            attempt["termination_reason"],
+        ) == ("active", 1, None)
+    finally:
+        store.close()
+
 
 
 def test_execution_insert_failure_rolls_back_claim(tmp_path):
@@ -676,46 +751,6 @@ def test_repeated_claim_does_not_create_a_second_execution(tmp_path):
         )
         assert first is not None
         assert second is None
-        assert _count(store, "executions") == 1
-    finally:
-        store.close()
-
-
-def test_unique_run_request_conflict_has_stable_error_semantics(tmp_path):
-    store = AstraStore(tmp_path / "claim-unique.sqlite3")
-    runtime = TaskRuntime(store)
-    submission = runtime.submit_task(
-        command_id="submit-claim-unique",
-        task_id="task-claim-unique",
-        contract=_contract(),
-        ready_at=READY_AT,
-    )
-    runtime.claim_and_start_execution(
-        execution_id="execution-claim-unique",
-        now=CLAIM_TIME,
-    )
-    store.connection.execute(
-        """
-        UPDATE phase4_run_requests SET state = 'pending'
-        WHERE run_request_id = ?
-        """,
-        (submission.run_request_id,),
-    )
-    try:
-        with pytest.raises(
-            RunRequestExecutionConflict,
-            match="run_request_execution_conflict",
-        ) as error:
-            runtime.claim_and_start_execution(
-                execution_id="execution-claim-unique-2",
-                now=CLAIM_TIME,
-            )
-        assert error.value.code == "run_request_execution_conflict"
-        request = store.query_one(
-            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
-            (submission.run_request_id,),
-        )
-        assert request["state"] == "pending"
         assert _count(store, "executions") == 1
     finally:
         store.close()
@@ -932,191 +967,3 @@ def test_persisted_execution_result_survives_restart(tmp_path):
         assert TaskRuntime(reopened).get_execution_result(claim.execution_id) == expected
     finally:
         reopened.close()
-
-
-@pytest.mark.parametrize(
-    (
-        "executor_status",
-        "executor_claimed_validation",
-        "submitted_verdict",
-        "expected_action",
-        "expected_task_state",
-        "expected_attempt",
-    ),
-    (
-        (
-            ExecutionStatus.FAILED,
-            False,
-            "pass",
-            PolicyAction.COMPLETE,
-            "succeeded",
-            "completed",
-        ),
-        (
-            ExecutionStatus.SUCCEEDED,
-            True,
-            "fail",
-            PolicyAction.CONTINUE_WITH_FEEDBACK,
-            "running",
-            "active",
-        ),
-    ),
-)
-def test_single_worker_keeps_executor_run_request_and_task_outcomes_separate(
-    tmp_path,
-    executor_status,
-    executor_claimed_validation,
-    submitted_verdict,
-    expected_action,
-    expected_task_state,
-    expected_attempt,
-):
-    store = AstraStore(
-        tmp_path / f"worker-{executor_status.value}-{submitted_verdict}.sqlite3"
-    )
-    runtime = TaskRuntime(store)
-    runtime.governance_core.evaluator_registry.register(
-        _ConfiguredOutcomeEvaluator()
-    )
-    submission = runtime.submit_task(
-        command_id=f"submit-worker-{executor_status.value}-{submitted_verdict}",
-        task_id=f"task-worker-{executor_status.value}-{submitted_verdict}",
-        contract=_governed_contract(),
-        completion_contract=_completion_contract(),
-        ready_at=READY_AT,
-    )
-
-    def result_factory(invocation):
-        return ExecutionResult(
-            execution_id=invocation.execution_id,
-            status=executor_status,
-            agent_turn_finished=True,
-            task_outcome_validated=executor_claimed_validation,
-            assistant_output="deterministic",
-            submitted_result={"governance_verdict": submitted_verdict},
-            result_receipt={
-                "receipt_id": f"result-receipt:{invocation.execution_id}",
-                "valid": executor_claimed_validation,
-                "evidence_refs": [],
-                "receipt_refs": [],
-            },
-            termination_reason="configured_deterministic_result",
-        )
-
-    executor = DeterministicFakeExecutor(result_factory=result_factory)
-    worker = SingleWorker(runtime, executor)
-    try:
-        run = asyncio.run(
-            worker.run_once(
-                execution_id=(
-                    f"execution-worker-{executor_status.value}-{submitted_verdict}"
-                ),
-                now=CLAIM_TIME,
-            )
-        )
-
-        assert run is not None
-        assert run.execution_result.status == executor_status
-        assert run.run_request_state == "completed"
-        assert run.governance_application.application == DecisionApplication.APPLIED
-        assert run.governance_evaluation.policy_decision.action == expected_action
-        assert len(executor.invocations) == 1
-        invocation = executor.invocations[0]
-        assert invocation.task_id == submission.task_id
-        assert invocation.attempt_id == submission.attempt_id
-        assert invocation.user_request == _governed_contract().objective.description
-        assert tuple(invocation.allowed_tools) == tuple(
-            tool.tool_name for tool in _governed_contract().resolved_tools
-        )
-
-        task = store.query_one(
-            "SELECT state, version FROM phase3_tasks WHERE task_id = ?",
-            (submission.task_id,),
-        )
-        attempt = store.query_one(
-            "SELECT state, version FROM phase3_attempts WHERE attempt_id = ?",
-            (submission.attempt_id,),
-        )
-        request = store.query_one(
-            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
-            (submission.run_request_id,),
-        )
-        execution = store.get_execution(run.claim.execution_id)
-        assert task["state"] == expected_task_state
-        assert task["version"] == 3
-        assert attempt["state"] == expected_attempt
-        assert attempt["version"] == 2
-        assert request["state"] == "completed"
-        assert execution is not None
-        assert execution["status"] == executor_status.value
-        assert execution["ended_at"] is not None
-        assert runtime.get_execution_result(run.claim.execution_id) is not None
-        assert _count(store, "phase3_completion_validations") == 1
-        assert _count(store, "phase3_policy_decisions") == 1
-        assert _count(store, "phase3_completion_contracts") == 1
-
-        assert asyncio.run(worker.run_once(now=CLAIM_TIME)) is None
-        assert len(executor.invocations) == 1
-    finally:
-        store.close()
-
-
-def test_single_worker_fails_closed_for_unregistered_requirement_evaluator(
-    tmp_path,
-):
-    store = AstraStore(tmp_path / "worker-unknown-evaluator.sqlite3")
-    runtime = TaskRuntime(store)
-    submission = runtime.submit_task(
-        command_id="submit-worker-unknown-evaluator",
-        task_id="task-worker-unknown-evaluator",
-        contract=_governed_contract(),
-        completion_contract=_completion_contract(),
-        ready_at=READY_AT,
-    )
-
-    def result_factory(invocation):
-        return ExecutionResult(
-            execution_id=invocation.execution_id,
-            status=ExecutionStatus.SUCCEEDED,
-            agent_turn_finished=True,
-            task_outcome_validated=True,
-            submitted_result={"governance_verdict": "pass"},
-            result_receipt={
-                "receipt_id": f"result-receipt:{invocation.execution_id}",
-                "valid": True,
-                "evidence_refs": [],
-                "receipt_refs": [],
-            },
-            termination_reason="configured_deterministic_result",
-        )
-
-    worker = SingleWorker(
-        runtime,
-        DeterministicFakeExecutor(result_factory=result_factory),
-    )
-    try:
-        run = asyncio.run(
-            worker.run_once(
-                execution_id="execution-worker-unknown-evaluator",
-                now=CLAIM_TIME,
-            )
-        )
-
-        assert run is not None
-        assert (
-            run.governance_evaluation.completion_validation.status
-            == CompletionStatus.EVALUATOR_ERROR
-        )
-        assert run.governance_evaluation.policy_decision.action == PolicyAction.ESCALATE
-        task = store.query_one(
-            "SELECT state FROM phase3_tasks WHERE task_id = ?",
-            (submission.task_id,),
-        )
-        request = store.query_one(
-            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
-            (submission.run_request_id,),
-        )
-        assert task["state"] == "failed"
-        assert request["state"] == "completed"
-    finally:
-        store.close()

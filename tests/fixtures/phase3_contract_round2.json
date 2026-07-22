@@ -1,5 +1,14 @@
 {
   "fixture_schema_version": "1",
+  "completion_requirement": {
+    "requirement_id": "authorized_effect_confirmed",
+    "description": "The authorized effect is confirmed by authoritative evidence.",
+    "evaluator": {
+      "evaluator_id": "astra.authorized_effect_confirmed",
+      "evaluator_version": "1"
+    },
+    "required_evidence": ["external_operation", "business_state"]
+  },
   "paths": {
     "success": {
       "input_complete": true,

@@ -94,7 +94,7 @@ Runtime、Hermes 内部 retry/replanning、第二套 Governance Core，也不把
 - Run Request 可以先形成单 Worker 闭环，再加入同主机多进程协调；
 - SQLite 限定了首版部署范围和并发规模；
 - 无法证明外部操作未 dispatch 时必须保守 reconciliation；
-- 所有实现必须由 `P4-A01` 至 `P4-A14` 验收编号驱动。
+- 所有实现必须由 `P4-A01` 至 `P4-A13` 验收编号驱动。
 
 P4.0 后第一条实现切片固定为：原地迁移、幂等 `submit_task(command_id)`、同事务
 创建 Task/初始 Attempt/Run Request、跨进程重开验证和重复 submit 验证。在该

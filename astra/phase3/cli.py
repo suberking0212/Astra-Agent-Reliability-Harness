@@ -34,7 +34,10 @@ def _parser() -> argparse.ArgumentParser:
     round2.add_argument("--fixture", type=Path, required=True)
     governance_round2 = commands.add_parser(
         "validate-governance-round2",
-        help="Validate Round 2 decisions through the Runtime Governance Core.",
+        help=(
+            "Validate the pure Round 2 contract fixture without assembling "
+            "the Production Runtime lifecycle."
+        ),
     )
     governance_round2.add_argument("--fixture", type=Path, required=True)
     contract = commands.add_parser(

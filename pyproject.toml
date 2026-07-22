@@ -5,6 +5,7 @@ requires-python = ">=3.11"
 dependencies = ["pydantic>=2.10,<3"]
 
 [project.scripts]
+astra-runtime = "astra.cli:main"
 astra-phase3 = "astra.phase3.cli:main"
 
 [tool.pytest.ini_options]

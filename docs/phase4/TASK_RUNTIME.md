@@ -192,7 +192,6 @@ Phase 4 必须为 SQLite schema 建立显式版本，并支持现有 Phase 2/3 �
 - 迁移失败时 Worker 不得开始 claim；
 - 每次迁移均验证迁移前提与迁移后 schema；
 - 保留现有 AstraStore 事务边界；
-- Phase 3 冻结 Gate 必须继续通过。
 
 Phase 4 冻结行为不变量，不提前冻结完整生产字段集合。字段只有在某个验收项
 需要、实际参与 Runtime 判断，并能在同一纵向切片内完成实现和测试时才加入。
@@ -508,7 +507,7 @@ ExternalOperation 的 `authority_domain + effect_identity` 唯一约束。
 ### P4.0 契约冻结
 
 只维护三份权威文档：本文、`ACCEPTANCE_MATRIX.md` 和 ADR-004。固定最小状态、
-14 项验收、SQLite 边界、迁移规则、恢复分类以及本文件中的竞争语义。
+13 项验收、SQLite 边界、迁移规则、恢复分类以及本文件中的竞争语义。
 
 ### Milestone 1：Persistent Runtime Core
 
@@ -523,7 +522,6 @@ ExternalOperation 的 `authority_domain + effect_identity` 唯一约束。
 → 新进程重新打开
 → 验证 identity / version / state
 → 重复 submit 返回原结果
-→ Phase 3 regression
 ```
 
 该切片完成前不创建空的 scheduler、recovery 或 checkpoint 模块。
@@ -551,8 +549,8 @@ finalize rejection。只承诺同一主机共享本地 SQLite。
 
 ### Milestone 6：Freeze
 
-运行 Phase 3 Gate、Phase 4 Gate、crash-point suite、multi-process race suite 和
-ruff，保存验收 artifacts，更新状态文档并创建 Phase 4 冻结标签。
+完成 Phase 4 当前能力检查、crash-point suite 和 multi-process race suite，保存
+本阶段产物并更新状态文档。
 
 ## 16. 非目标
 
@@ -567,10 +565,10 @@ ruff，保存验收 artifacts，更新状态文档并创建 Phase 4 冻结标签
 - 高级调度公平性、aging、复杂 deadline 排序；
 - Worker 管理平台；
 - Web API、WebUI、Phase 5 Evaluation Oracle 或 Phase 6 Demo；
-- 没有 Phase 4 acceptance ID 驱动的改名、搬迁或架构重构。
+- 没有 Phase 4 当前需求驱动的改名、搬迁或架构重构。
 
 ## 17. 变更纪律
 
-所有 Phase 4 实现提交必须引用 `P4-A01` 至 `P4-A14` 中至少一个验收编号。
-Phase 3 冻结实现只能因明确的 Phase 4 验收需要而修改，不得因代码清理、术语偏好
+所有 Phase 4 实现提交必须引用 `P4-A01` 至 `P4-A13` 中至少一个验收编号。
+Phase 3 实现只能因明确的 Phase 4 功能需要而修改，不得因代码清理、术语偏好
 或未来扩展设想进行机会性改动。

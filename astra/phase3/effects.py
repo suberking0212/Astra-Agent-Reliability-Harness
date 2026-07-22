@@ -174,6 +174,10 @@ class EffectNormalizerRegistry:
             raise EffectContractError(f"Normalizer already registered: {key!r}")
         self._normalizers[key] = normalizer
 
+    @property
+    def registered_refs(self) -> tuple[tuple[str, str], ...]:
+        return tuple(sorted(self._normalizers))
+
     def normalize(
         self,
         contract: TaskContract,

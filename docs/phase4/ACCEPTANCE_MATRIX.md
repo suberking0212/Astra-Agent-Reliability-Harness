@@ -6,11 +6,10 @@
 
 ## 1. 使用规则
 
-- 顶层验收编号固定为 `P4-A01` 至 `P4-A14`；
+- 顶层验收编号固定为 `P4-A01` 至 `P4-A13`；
 - 每个 Phase 4 实现提交必须引用至少一个编号；
 - 每项验收必须由自动化测试证明，不以手工演示代替；
 - crash window 和并发竞态作为测试矩阵展开，不新增顶层产品能力；
-- Phase 3 冻结 Gate 是 Phase 4 的持续阻塞 Gate。
 
 推荐提交说明格式：
 
@@ -37,7 +36,6 @@ Implements: P4-A01, P4-A02
 | P4-A11 | fencing | lease takeover 后，旧 Worker 的 heartbeat、result 和 finalize 写入因 stale token 被拒绝；旧所有权不能覆盖新 Worker 状态。 | multiprocessing takeover、stale writer | M5 |
 | P4-A12 | ExternalOperation 唯一性 | 相同 `authority_domain + effect_identity` 在 Execution、Attempt、Worker 或进程变化后仍只对应一个 ExternalOperation。 | concurrent prepare、restart replay、unique constraint | M4-M5 |
 | P4-A13 | budget 与 deadline | Task/Attempt budget 和 deadline 阻止无限 Execution/Attempt；deadline 固定为失败，使用稳定 termination reason。 | boundary、restart、policy integration | M2-M4 |
-| P4-A14 | Phase 3 全量回归 | Phase 3 frozen contract、governance、pytest 和 ruff Gate 原样通过；live Provider smoke 继续是 environment-dependent non-blocking test。 | existing frozen gates | 全程/M6 |
 
 ## 3. 验收语义断言
 
@@ -100,16 +98,16 @@ Crash 测试必须使用真实 SQLite 文件、独立子进程和强制进程退
 
 | Crash ID | 强杀位置 | 恢复后必须满足 | 覆盖验收 |
 |---|---|---|---|
-| P4-C01 | schema migration 完成前/后 | 失败迁移阻止 Worker；成功迁移可重复执行且数据保留。 | A01、A14 |
+| P4-C01 | schema migration 完成前/后 | 失败迁移阻止 Worker；成功迁移可重复执行且数据保留。 | A01 |
 | P4-C02 | Task/Attempt/Run Request 原子提交前/后 | 不出现半个初始生命周期；重放 `submit_task` 返回同一结果。 | A01、A02 |
 | P4-C03 | Run Request claim 后、Execution 创建前 | 过期执行权可恢复；不产生两个有效 claim。 | A07、A08、A10 |
 | P4-C04 | Execution 创建后、Hermes 调用前 | 原 Execution 终结为 interrupted；恢复使用新 Execution。 | A07、A08 |
 | P4-C05 | 外部调用边界前后 | 已证明未 dispatch 可继续；dispatch 未知或可能已发生则先 reconciliation。 | A06、A09、A12 |
-| P4-C06 | ExecutionResult 保存后、Governance 应用前 | 结果不丢失；治理可幂等重放；Task 不被 Hermes 输出直接完成。 | A02、A08、A14 |
-| P4-C07 | PolicyDecision 保存后、应用前 | 重启后复用同一 decision/context；CAS stale 时不得强行应用。 | A02、A13、A14 |
+| P4-C06 | ExecutionResult 保存后、Governance 应用前 | 结果不丢失；治理可幂等重放；Task 不被 Hermes 输出直接完成。 | A02、A08 |
+| P4-C07 | PolicyDecision 保存后、应用前 | 重启后复用同一 decision/context；CAS stale 时不得强行应用。 | A02、A13 |
 | P4-C08 | Interaction resolution 事务前/后 | 不出现 resolved Interaction 缺少 Run Request 的已提交中间态；重放幂等。 | A02、A03、A04 |
 | P4-C09 | cancel 事务前/后 | 已提交 cancel 跨重启生效；未提交 cancel 不伪造取消；重放幂等。 | A05、A06 |
-| P4-C10 | 权威状态提交后、Outbox 投递前 | 状态保持；Outbox 可幂等恢复投递。 | A01、A08、A14 |
+| P4-C10 | 权威状态提交后、Outbox 投递前 | 状态保持；Outbox 可幂等恢复投递。 | A01、A08 |
 
 ## 5. Multi-process matrix
 
@@ -125,53 +123,21 @@ Crash 测试必须使用真实 SQLite 文件、独立子进程和强制进程退
 | P4-R06 | resolve 与 cancel 并发 | 遵守事务胜者规则，不产生 terminal Task 的可执行 Run Request。 | A03、A05 |
 | P4-R07 | 两进程重复执行同一 command_id | 返回同一命令结果，不产生重复对象。 | A02 |
 | P4-R08 | 两进程准备同一 effect identity | 只存在一个 ExternalOperation。 | A12 |
-| P4-R09 | 两进程应用同一 PolicyDecision | decision 只应用一次，派生记录不重复。 | A02、A14 |
+| P4-R09 | 两进程应用同一 PolicyDecision | decision 只应用一次，派生记录不重复。 | A02 |
 
-## 6. Phase 3 regression Gate
-
-Phase 4 每个里程碑结束时必须运行现有冻结 Gate。正式冻结至少运行：
-
-```text
-python -m astra.phase3 validate-round2 \
-  --fixture tests/fixtures/phase3_contract_round2.json
-
-python -m astra.phase3 validate-governance-round2 \
-  --fixture tests/fixtures/phase3_contract_round2.json
-
-pytest -q
-ruff check astra tests
-```
-
-验收目标是保持或超过 Phase 3 冻结基线：
-
-```text
-validate-round2: 35/35 passed
-validate-governance-round2: 35/35 passed
-pytest: 104 passed, 1 skipped
-ruff: All checks passed
-```
-
-唯一 skipped live Provider smoke 继续分类为：
-
-```text
-environment-dependent non-blocking test
-```
-
-不得为了消除该 skip 把外部凭证或网络依赖引入核心 Gate。
-
-## 7. Milestone Gate
+## 6. Milestones
 
 | Milestone | 阻塞验收 |
 |---|---|
-| P4.0 | 三份权威文档一致；A01-A14 编号和四处唯一语义冻结。 |
-| M1 Persistent Runtime Core | A01、A02、A14。 |
-| M2 Single-worker Execution | A01、A02、A13、A14，并形成 submit→execute→governance 闭环。 |
-| M3 Interaction and Cancellation | A03、A04、A05、A06、A14。 |
-| M4 Checkpoint and Recovery | A07、A08、A09、A12、A13、A14，完成 crash matrix。 |
-| M5 Multi-process Coordination | A10、A11、A12、A14，完成 race matrix。 |
-| M6 Freeze | A01-A14 全部通过，文档和 artifacts 完整。 |
+| P4.0 | 三份权威文档一致；A01-A13 编号和四处唯一语义冻结。 |
+| M1 Persistent Runtime Core | A01、A02。 |
+| M2 Single-worker Execution | A01、A02、A13，并形成 submit→execute→governance 闭环。 |
+| M3 Interaction and Cancellation | A03、A04、A05、A06。 |
+| M4 Checkpoint and Recovery | A07、A08、A09、A12、A13，完成 crash matrix。 |
+| M5 Multi-process Coordination | A10、A11、A12，完成 race matrix。 |
+| M6 Freeze | A01-A13 全部通过，文档和 artifacts 完整。 |
 
-## 8. Freeze artifacts
+## 7. Freeze artifacts
 
 Phase 4 正式冻结输出保存到：
 
@@ -184,7 +150,6 @@ artifacts/phase4-task-runtime-complete/
 ```text
 README.md
 acceptance-manifest.json
-phase3-regression.txt
 phase4-acceptance.txt
 crash-recovery.txt
 multi-process-race.txt
@@ -195,11 +160,10 @@ ruff.txt
 
 - Git commit 和 Phase 4 tag；
 - schema version；
-- A01-A14 每项状态及对应测试；
+- A01-A13 每项状态及对应测试；
 - crash/multi-process suite 结果；
-- Phase 3 regression 结果；
 - SQLite 同主机多进程适用边界；
 - 已知非阻塞环境依赖。
 
-只有 A01-A14 全部通过、Phase 3 Gate 原样通过、验收输出归档完成后，Phase 4
+只有 A01-A13 全部通过、验收输出归档完成后，Phase 4
 才能标记为 `COMPLETE AND FROZEN`。

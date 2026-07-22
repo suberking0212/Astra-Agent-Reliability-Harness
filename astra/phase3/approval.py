@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Self
+from typing import Any, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from .effects import CanonicalEffectRequest
 from .task_contract import (
@@ -59,6 +60,33 @@ class ApprovalRequirementRef(FrozenContractModel):
             approval_requirement_id=identifier,
             approval_requirement_version=version,
         )
+
+
+class ApprovalRequest(FrozenContractModel):
+    approval_request_id: str
+    interaction_id: str
+    task_id: str
+    attempt_id: str
+    execution_id: str
+    task_contract_ref: TaskContractRef
+    approval_requirement_ref: ApprovalRequirementRef
+    effect_identity: str
+    effect_request_hash: str
+    effect_summary: Mapping[str, Any]
+    permission_scope: str
+    risk_class: str
+    approver_policy_ref: str
+    requested_at: datetime
+    expires_at: datetime | None = None
+    status: str = "pending"
+    version: int = Field(default=1, ge=1)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        if value not in {"pending", "resolved", "cancelled"}:
+            raise ValueError(f"Invalid ApprovalRequest status: {value!r}")
+        return value
 
 
 class ApprovalResolution(FrozenContractModel):

@@ -7,18 +7,129 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from astra.budget import BudgetLedger
-from astra.domain import RuntimeInvocation
-from astra.hermes_adapter import HermesExecutor
-from astra.mock_business import MockBusinessService
-from astra.result_validator import MinimalResultValidator
-from astra.storage import AstraStore
-from astra.tool_gateway import AstraToolGateway
-from astra.trace import NeutralTraceCollector
+from astra.phase3.completion import (
+    CompletionContract,
+    CompletionRequirement,
+    EvaluatorRef,
+)
+from astra.phase3.task_contract import TaskContract
+from astra.production import ProductionConfig, ProductionRuntime
+from astra.tool_gateway import production_tool_schema_hash
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 HERMES_ROOT = WORKSPACE_ROOT / "hermes-agent-main"
+
+
+def _single_worker_contracts() -> tuple[TaskContract, CompletionContract]:
+    task_contract = TaskContract.materialize(
+        {
+            "schema_version": "1",
+            "contract_id": "contract-hermes-single-worker-integration",
+            "contract_version": "1",
+            "task_type": "hermes_single_worker_integration",
+            "execution_type": "tool_execution",
+            "objective": {
+                "description": (
+                    "Investigate the damaged order and create a complaint ticket."
+                )
+            },
+            "subject_refs": [
+                {
+                    "authority_domain": "commerce.mock",
+                    "type": "order",
+                    "id": "order-001",
+                }
+            ],
+            "input_snapshot": {
+                "schema_id": "test.hermes_single_worker",
+                "schema_version": "1",
+                "values": {"order_id": "order-001"},
+                "content_hash": "sha256:test-hermes-single-worker-input",
+            },
+            "allowed_capabilities": [
+                {
+                    "capability_id": "complaints.integration",
+                    "capability_version": "1",
+                }
+            ],
+            "resolved_tools": [
+                {
+                    "tool_name": "get_order",
+                    "tool_version": "1",
+                    "schema_hash": production_tool_schema_hash("get_order"),
+                    "capability_ref": "complaints.integration@1",
+                    "access_mode": "read",
+                },
+                {
+                    "tool_name": "search_policy",
+                    "tool_version": "1",
+                    "schema_hash": production_tool_schema_hash("search_policy"),
+                    "capability_ref": "complaints.integration@1",
+                    "access_mode": "read",
+                },
+                {
+                    "tool_name": "create_complaint_ticket",
+                    "tool_version": "1",
+                    "schema_hash": production_tool_schema_hash(
+                        "create_complaint_ticket"
+                    ),
+                    "capability_ref": "complaints.integration@1",
+                    "access_mode": "effect",
+                },
+            ],
+            "constraints": [],
+            "authorized_effects": [
+                {
+                    "effect_intent_id": "create-integration-complaint",
+                    "effect_type": "support.complaint_ticket",
+                    "effect_type_version": "1",
+                    "authority_domain": "support.mock",
+                    "subject_ref": {
+                        "authority_domain": "commerce.mock",
+                        "type": "order",
+                        "id": "order-001",
+                    },
+                    "parameter_constraints": {},
+                    "max_confirmed_occurrences": 1,
+                }
+            ],
+            "approval_requirements": [],
+            "completion_contract_ref": {
+                "contract_id": "completion-hermes-single-worker-integration",
+                "contract_version": "1",
+            },
+            "limits": {
+                "max_attempts": 1,
+                "task_deadline": "2099-01-01T00:00:00Z",
+                "max_executions_per_attempt": 1,
+                "max_feedback_cycles": 0,
+                "max_reconcile_cycles": 0,
+            },
+        }
+    )
+    completion_contract = CompletionContract(
+        contract_id=task_contract.completion_contract_ref.contract_id,
+        contract_version=task_contract.completion_contract_ref.contract_version,
+        task_type=task_contract.task_type,
+        requirements=(
+            CompletionRequirement(
+                requirement_id="confirmed_complaint_effect",
+                description=(
+                    "The complaint effect is confirmed by authoritative state."
+                ),
+                evaluator=EvaluatorRef(
+                    evaluator_id="astra.authorized_effect_confirmed",
+                    evaluator_version="1",
+                ),
+                configuration={
+                    "effect_intent_ref": "create-integration-complaint"
+                },
+                required_evidence=("external_operation", "business_state"),
+            ),
+        ),
+    )
+    return task_contract, completion_contract
 
 
 def _tool_call(call_id: str, name: str, arguments: dict):
@@ -104,7 +215,6 @@ def _scripted_provider(**request):
                         "order_id": "order-001",
                         "reason": "item damaged in transit",
                         "resolution": "create complaint for policy exception review",
-                        "idempotency_key": "task-phase2-ticket",
                     },
                 )
             ],
@@ -138,8 +248,17 @@ def _scripted_provider(**request):
     )
 
 
-def test_phase2_normal_complaint_vertical_slice(tmp_path, monkeypatch):
-    hermes_home = tmp_path / "hermes-home"
+def _client():
+    client = MagicMock()
+    client.chat.completions.create.side_effect = _scripted_provider
+    return client
+
+
+def test_single_worker_with_real_hermes_executor_finalizes_once(
+    tmp_path,
+    monkeypatch,
+):
+    hermes_home = tmp_path / "hermes-worker-home"
     hermes_home.mkdir()
     (hermes_home / "config.yaml").write_text(
         "plugins:\n  enabled:\n    - astra_bridge\n",
@@ -157,45 +276,11 @@ def test_phase2_normal_complaint_vertical_slice(tmp_path, monkeypatch):
     finally:
         sys.path.remove(str(HERMES_ROOT))
 
-    store = AstraStore(tmp_path / "phase2.sqlite3")
-    business = MockBusinessService(store)
-    business.seed_normal_complaint()
-    gateway = AstraToolGateway(store, business)
-    validator = MinimalResultValidator(store, business)
-    budget = BudgetLedger(store)
-    trace = NeutralTraceCollector(store)
-    executor = HermesExecutor(
+    database = tmp_path / "single-worker-hermes.sqlite3"
+    task_contract, completion_contract = _single_worker_contracts()
+    config = ProductionConfig(
+        database_path=database,
         hermes_root=HERMES_ROOT,
-        store=store,
-        gateway=gateway,
-        validator=validator,
-        budget=budget,
-        trace=trace,
-        client_factory=lambda _: _client(),
-    )
-    invocation = RuntimeInvocation(
-        execution_id="exec-phase2-normal",
-        task_id="task-phase2-normal",
-        attempt_id="attempt-phase2-normal",
-        user_request=(
-            "The customer received a damaged item after the normal return window. "
-            "Investigate and handle the complaint using the available tools."
-        ),
-        task_contract={
-            "task_type": "complaint_resolution",
-            "execution_type": "tool_execution",
-            "allowed_capabilities": ["complaint_investigation", "ticket_creation"],
-            "completion_requirements": [
-                "complaint resolution outcome exists",
-                "required business state is persisted",
-                "required side effects are verified",
-            ],
-        },
-        allowed_tools=(
-            "get_order",
-            "search_policy",
-            "create_complaint_ticket",
-        ),
         provider_config={
             "base_url": "http://127.0.0.1:9/v1",
             "api_key": "phase2-dummy-key",
@@ -203,39 +288,38 @@ def test_phase2_normal_complaint_vertical_slice(tmp_path, monkeypatch):
             "api_mode": "chat_completions",
             "model": "astra-phase2-scripted-provider",
         },
-        limits={"max_agent_steps": 8, "budget_mode": "observe_only"},
+        hermes_session_database_path=database.with_suffix(".hermes.sqlite3"),
     )
-    observed_events = []
+    with ProductionRuntime(
+        config, hermes_client_factory=lambda _: _client()
+    ) as app:
+        app.business.seed_normal_complaint()
+        submission = app.submit_task(
+            command_id="submit-real-hermes-worker",
+            task_id="task-real-hermes-worker",
+            contract=task_contract,
+            completion_contract=completion_contract,
+            ready_at="2026-07-20T00:00:00+00:00",
+        )
+        result = asyncio.run(
+            app.run_worker_once()
+        )
 
-    async def sink(event):
-        observed_events.append(event)
-
-    result = asyncio.run(executor.execute(invocation, sink))
-
-    assert result.status.value == "succeeded"
-    assert result.task_outcome_validated is True
-    assert result.agent_turn_finished is True
-    assert result.result_receipt["valid"] is True
-    assert result.usage.total_tokens == 200
-    assert len(business.snapshot()["complaint_tickets"]) == 1
-    assert store.finalize_execution(
-        execution_id=invocation.execution_id,
-        status="failed",
-        termination_reason="duplicate",
-    ) is False
-
-    event_types = [event.event_type for event in observed_events]
-    assert event_types[0] == "ExecutionStarted"
-    assert "ResultSubmission" in event_types
-    assert "ResultValidation" in event_types
-    assert event_types[-1] == "ExecutionEnded"
-    trace_types = [row["event_type"] for row in trace.timeline(invocation.execution_id)]
-    assert "ToolCall" in trace_types
-    assert "ProviderCall" in trace_types
-    assert "ExecutionEnded" in trace_types
-
-
-def _client():
-    client = MagicMock()
-    client.chat.completions.create.side_effect = _scripted_provider
-    return client
+        assert result is not None
+        assert result.execution_finalized is True
+        assert result.run_request_state == "completed"
+        execution = app.store.get_execution(result.claim.execution_id)
+        assert execution is not None
+        assert execution["ended_at"] is not None
+        assert app.store.query_one(
+            """
+            SELECT COUNT(*) FROM execution_events
+            WHERE execution_id = ? AND event_type = 'AstraExecutionEnded'
+            """,
+            (result.claim.execution_id,),
+        )[0] == 1
+        task = app.store.query_one(
+            "SELECT state FROM phase3_tasks WHERE task_id = ?",
+            (submission.task_id,),
+        )
+        assert task["state"] == "succeeded"

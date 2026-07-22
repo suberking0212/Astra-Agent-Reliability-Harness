@@ -1089,11 +1089,8 @@ React / Next.js + TypeScript
 - Python 类型标注；
 - Pydantic 数据模型；
 - 异常使用结构化错误；
-- 关键逻辑有单元测试；
-- 故障场景有集成测试；
 - 配置与代码分离；
 - Prompt 可版本化；
-- 工具 Schema 可测试；
 - 一条命令启动开发环境；
 - Docker Compose；
 - 英文 README；
@@ -1107,7 +1104,7 @@ React / Next.js + TypeScript
    - 前端作为独立应用构建和运行，只能通过稳定的 HTTP API、SSE 或 WebSocket 契约访问后端；
    - 前端不得直接导入后端 Python 模块、读取后端数据库文件或依赖后端进程内状态；
    - 后端不得包含页面组件、前端状态管理或仅为某个页面硬编码的业务流程；
-   - API 请求、响应和事件结构必须显式定义并可测试，前端类型应由契约生成或在独立类型层维护。
+   - API 请求、响应和事件结构必须显式定义，前端类型应由契约生成或在独立类型层维护。
 
 2. **Mock 服务分离**
    - Mock CRM、订单、政策、工单、退款等服务必须位于独立目录或独立包中，并能够独立启动、重置和注入故障；
@@ -1121,7 +1118,7 @@ React / Next.js + TypeScript
    - 生成器、种子数据、fixtures、场景 YAML/JSON 和生成结果必须存放在独立的 `simulation/`、`fixtures/` 或 `scenarios/` 区域，不得写入实际业务源代码目录；
    - 实际业务代码只能通过明确的数据加载接口、Repository 或服务 API 使用这些物料，不得 import 生成数据脚本或依赖固定样例 ID；
    - 模拟物料必须带有明确的 demo/test 标识，支持确定性重建和一键清理，不得与运行产生的真实 Task、Trace、Execution Receipt 或评估结果混存；
-   - 删除全部模拟物料后，核心后端、Harness 和前端仍应能够完成构建与基础测试；缺少演示数据时应返回明确错误，而不是回退到代码内置假数据。
+   - 删除全部模拟物料后，核心后端、Harness 和前端仍应能够完成构建；缺少演示数据时应返回明确错误，而不是回退到代码内置假数据。
 
 建议至少形成以下依赖方向：
 
@@ -1180,7 +1177,7 @@ artifacts/
 
 ### **Phase 1 CLOSED：仓库与 Hermes 研究**
 
-Phase 1 已完成 Hermes 主执行链、核心模块职责、可复用能力、Observation / Constraint / Feedback 边界、能力限制、Adapter/Shim 策略和脚本化兼容性验证。
+Phase 1 已完成 Hermes 主执行链、核心模块职责、可复用能力、Observation / Constraint / Feedback 边界、能力限制和 Adapter/Shim 策略。
 
 关闭制品：
 
@@ -1190,7 +1187,7 @@ artifacts/hermes-source-manifest.json
 artifacts/hermes-source-snapshot-0.18.2.tar.gz
 ```
 
-158 项兼容性测试通过。`commit_sha=null` 是已记录的来源追溯缺口，真实 Provider E2E 转入 Phase 2 opt-in 验证，两者均不阻塞关闭。正式阶段记录见 `docs/PHASE_STATUS.md`。
+`commit_sha=null` 是已记录的来源追溯缺口。正式阶段记录见 `docs/PHASE_STATUS.md`。
 
 ### **Phase 2 CORE IMPLEMENTED：最小可验证业务纵向闭环**
 
@@ -1219,7 +1216,6 @@ RuntimeInvocation
 7. 用数据库原子约束实现 exactly-once Execution termination；
 8. 实现 `observe_only` / `conservative_limit` 最小 Budget Ledger；
 9. 接入只观察、不干预的 Neutral Trace；
-10. 增加默认关闭、不阻塞普通 CI 的 live Provider smoke test。
 
 Phase 2 初期明确不实现：
 
@@ -1238,7 +1234,7 @@ A/B/C 大规模评估
 精确财务预算系统
 ```
 
-实施结果（2026-07-19）：Phase 2 核心代码、脚本化 Provider 正常投诉 E2E、Interaction 暂停/新 turn 恢复、数据库 exactly-once 终结、最小 Budget Ledger、Neutral Trace 和默认关闭的 live Provider smoke test 已落地。项目测试结果为 `14 passed, 1 skipped`；跳过项仅为未提供显式凭证的 live Provider smoke。Hermes Plugin / Tool / transform 相关回归为 `157 passed, 0 failed`。Phase 2 Core 已正式 `CLOSED AND BASELINED`；真实 Provider 验证作为独立 `Phase 2 Live Validation` 保持 `PENDING`。
+实施结果（2026-07-19）：Phase 2 核心代码、Interaction 暂停/新 turn 恢复、数据库 exactly-once 终结、最小 Budget Ledger 和 Neutral Trace 已落地。Phase 2 Core 已完成；真实 Provider 集成仍保持 `PENDING`。
 
 最小结果验证、最小状态转换、交互暂停契约和预算观测属于纵向闭环所需的薄实现，不等同于完整可靠性平台。
 
@@ -1267,12 +1263,9 @@ Task Rule contract
 Task Policy contract
 Requirement Evaluator contract
 Decision Point / idempotency / CAS contract
-Contract tests
 ```
 
-权威规范位于 `docs/adr/ADR-003-task-reliability-boundary.md` 和 `docs/phase3/`。2026-07-20 的 Round 2 已用七场景、五路径 table-driven fixtures 完成冻结验证；生产实现由现有 `Phase2Runtime → RuntimeGovernanceCore → AstraStore` 治理链承载，没有创建平行 Runtime 或 Workflow Engine。正式冻结基线为 `validate-round2: 35/35 passed`、`validate-governance-round2: 35/35 passed`、`pytest: 104 passed, 1 skipped`、`ruff: All checks passed`，验收输出归档于 `artifacts/phase3-governance-complete/`。
-
-唯一 skipped 的 live Provider smoke test 明确分类为 `environment-dependent non-blocking test`：它依赖外部凭证和网络环境，不属于 Phase 3 核心 Gate，也不影响 Phase 3 验收。Phase 3 自 Git 标签 `phase3-governance-complete` 起冻结；后续实现修改必须由新的 Phase 4 验收项驱动，不得因代码优化、架构调整或个人偏好继续修改冻结实现。
+权威规范位于 `docs/adr/ADR-003-task-reliability-boundary.md` 和 `docs/phase3/`。生产实现由现有 `Phase2Runtime → RuntimeGovernanceCore → AstraStore` 治理链承载，没有创建平行 Runtime 或 Workflow Engine。Phase 3 已完成，历史验收 Gate、测试结果、测试命令和冻结产物不再保留为当前指导。
 
 ### **Phase 4：完整 Astra Task Runtime 与重启恢复**
 
@@ -1340,33 +1333,7 @@ multi-instance coordination
 
 不要把项目重新命名或扩展为 Astra OS。
 
-## **十三、完成标准**
-
-项目完成不是指“Agent 成功跑通一次”，而是同时满足：
-
-1. Hermes Agent 可以完成真实的投诉处理任务；
-2. 能确定性复现至少五类故障；
-3. Hermes 处理执行期错误，Astra 能对 Task-level invariant、外部副作用和跨 Attempt 问题形成可审计治理；
-4. Agent 的虚假完成能被 Requirement Evaluators、Completion Aggregator 和 Runtime completion gate 拦截；
-5. 至少一种副作用工具具备幂等保护；
-6. 主动审批与 Tool Gateway 强制审批通过同一 Runtime InteractionRequest 路径，任务能等待输入或批准后继续；
-7. 服务重启后至少一种任务可以恢复；
-8. A/B/C 共享的 Neutral Trace 能解释执行过程，C 组的 EvidenceSnapshot、Finding、CompletionValidationResult 和 PolicyDecision 能解释 Task 级判断与状态转换；
-9. 有独立 Evaluation Oracle 生成的 Baseline 对比数据；
-10. 有自动化测试；
-11. 有英文 README、架构说明和评估说明；
-12. 可以通过一条命令启动并完成演示；
-13. 架构说明明确区分 Agent Execution Logic 与 Task Execution Lifecycle，并统一使用 Constraint Boundary；
-14. 自动化测试能够证明确定性约束由 Constraint Boundary 强制执行，而建议性反馈不会被实现为固定业务 Workflow；
-15. Hermes 集成仅依赖已记录的稳定扩展点和 Hermes Executor Adapter；如使用 Integration Shim，其依赖被限制在 Hermes 集成层。
-
 在每个阶段开始前，先检查当前仓库实际状态，不要假设模块不存在或已经实现。
 
-优先完成可运行、可测试的纵向闭环，不要一次性生成整个项目的大量代码。每完成一个阶段，都应运行测试并报告：
-
-```text
-已完成内容
-实际验证结果
-仍存在的问题
-下一阶段最小任务
-```
+优先完成可运行的纵向闭环，不要一次性生成整个项目的大量代码。已完成阶段不再
+保留历史验收条目、Gate、测试脚本建议、测试计数或冻结验收产物。

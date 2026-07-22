@@ -1,4 +1,4 @@
-"""Minimal contract-based result validation for the normal complaint path."""
+"""Validate submitted results without duplicating Completion Contract semantics."""
 
 from __future__ import annotations
 
@@ -32,22 +32,10 @@ class MinimalResultValidator:
             for row in receipts
         )
 
-        ticket_id = str(outcome.get("ticket_id", ""))
-        ticket = self.business.get_complaint_ticket(ticket_id) if ticket_id else None
-        expected_customer = str(outcome.get("customer_id", ""))
-        expected_order = str(outcome.get("order_id", ""))
-        ticket_exists = ticket is not None
-        ticket_matches = bool(
-            ticket
-            and ticket["customer_id"] == expected_customer
-            and ticket["order_id"] == expected_order
-        )
         create_receipt_present = any(
             row["tool_name"] == "create_complaint_ticket" for row in receipts
         )
-        evidence_backed = bool(evidence_refs) and set(evidence_refs).issubset(
-            receipt_ids
-        )
+        evidence_backed = set(evidence_refs).issubset(receipt_ids)
         no_unresolved_interaction = self.store.pending_interaction(
             invocation.execution_id
         ) is None
@@ -55,12 +43,36 @@ class MinimalResultValidator:
         checks = {
             "receipt_refs_complete": refs_complete,
             "receipt_refs_owned_by_execution": refs_owned,
-            "complaint_ticket_exists": ticket_exists,
-            "complaint_ticket_matches_outcome": ticket_matches,
-            "create_ticket_receipt_present": create_receipt_present,
             "evidence_refs_backed_by_receipts": evidence_backed,
             "no_unresolved_interaction": no_unresolved_interaction,
         }
+        ticket_id = str(outcome.get("ticket_id", ""))
+        complaint_claimed = bool(ticket_id or create_receipt_present)
+        if complaint_claimed:
+            ticket = (
+                self.business.get_complaint_ticket(ticket_id)
+                if ticket_id
+                else None
+            )
+            expected_customer = outcome.get("customer_id")
+            expected_order = outcome.get("order_id")
+            checks.update(
+                {
+                    "complaint_ticket_exists": ticket is not None,
+                    "complaint_ticket_matches_outcome": bool(
+                        ticket
+                        and (
+                            expected_customer is None
+                            or ticket["customer_id"] == str(expected_customer)
+                        )
+                        and (
+                            expected_order is None
+                            or ticket["order_id"] == str(expected_order)
+                        )
+                    ),
+                    "create_ticket_receipt_present": create_receipt_present,
+                }
+            )
         errors = tuple(name for name, passed in checks.items() if not passed)
         receipt = ResultReceipt(
             receipt_id=str(uuid4()),

@@ -14,18 +14,14 @@ from astra.phase3 import (
     ApprovalDecision,
     ApprovalRequirementRef,
     ApprovalResolution,
-    GovernanceStore,
     PolicyAction,
     Round2Path,
-    RuntimeGovernanceCore,
     TaskContract,
     TaskState,
     build_canonical_effect_request,
     evaluate_round2_contract_chain,
     verify_approval_binding,
 )
-from astra.runtime import Phase2Runtime
-from astra.storage import AstraStore
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "phase3_contract_round2.json"
@@ -46,6 +42,7 @@ def test_production_domain_chain_matches_frozen_round2_fixture(
         normalized_parameters=scenario["normalized_parameters"],
         normalizer_id=scenario["normalizer"]["normalizer_id"],
         normalizer_version=scenario["normalizer"]["normalizer_version"],
+        completion_requirement=FIXTURES["completion_requirement"],
         path=Round2Path.model_validate(path),
     )
 
@@ -169,89 +166,3 @@ def test_phase3_cli_is_the_fixture_validation_entrypoint():
     governance_report = json.loads(governance.stdout)
     assert governance_report["valid"] is True
     assert governance_report["passed_count"] == 35
-
-
-def test_governance_core_is_composed_into_existing_phase2_runtime():
-    scenario = FIXTURES["scenarios"][0]
-    path = FIXTURES["paths"]["success"]
-    chain = evaluate_round2_contract_chain(
-        task_contract=scenario["task_contract"],
-        normalized_parameters=scenario["normalized_parameters"],
-        normalizer_id=scenario["normalizer"]["normalizer_id"],
-        normalizer_version=scenario["normalizer"]["normalizer_version"],
-        path=path,
-    )
-    phase2_store = AstraStore()
-    governance_store = GovernanceStore.from_astra_store(phase2_store)
-    governance_core = RuntimeGovernanceCore(governance_store)
-    runtime = Phase2Runtime(phase2_store, governance_core=governance_core)
-    try:
-        governance_core.create_task(
-            chain.task_contract,
-            task_id="task-round2",
-            attempt_id="attempt-round2",
-            task_version=12,
-            attempt_version=5,
-        )
-        assert chain.external_operation is not None
-        assert chain.canonical_effect_request is not None
-        assert chain.approval_resolution is not None
-        governance_core.record_approval_resolution(
-            "task-round2", chain.approval_resolution
-        )
-        prepared, created = governance_core.prepare_external_operation(
-            chain.canonical_effect_request,
-            task_id="task-round2",
-            attempt_id="attempt-round2",
-            execution_id="execution-round2",
-            approval_resolution_id=(
-                chain.approval_resolution.approval_resolution_id
-            ),
-            operation_id=chain.external_operation.operation_id,
-            now=chain.external_operation.created_at,
-        )
-        assert created is True
-        replayed_operation, replay_created = (
-            governance_core.prepare_external_operation(
-                chain.canonical_effect_request,
-                task_id="task-round2",
-                attempt_id="attempt-round2",
-                execution_id="execution-round2-retry",
-                approval_resolution_id=(
-                    chain.approval_resolution.approval_resolution_id
-                ),
-                operation_id="must-not-be-created",
-                now=chain.external_operation.created_at,
-            )
-        )
-        assert replay_created is False
-        assert replayed_operation.operation_id == prepared.operation_id
-        governance_core.transition_external_operation(
-            prepared.operation_id, chain.external_operation.status
-        )
-        governance_core.record_completion_validation(
-            "task-round2", chain.completion_validation
-        )
-        governance_core.record_policy_decision(chain.policy_decision)
-
-        applied = runtime.apply_governance_decision(
-            chain.policy_decision.decision_id
-        )
-        replayed = runtime.apply_governance_decision(
-            chain.policy_decision.decision_id
-        )
-        assert applied.application.value == "applied"
-        assert applied.task_state.value == "succeeded"
-        assert replayed.application.value == "applied"
-        assert governance_store.query_one(
-            "SELECT usage_count FROM phase3_approval_resolutions"
-        )[0] == 1
-        assert governance_store.query_one(
-            "SELECT COUNT(*) FROM phase3_reliability_facts"
-        )[0] == 3
-        assert governance_store.query_one(
-            "SELECT COUNT(*) FROM phase3_outbox"
-        )[0] == 3
-    finally:
-        governance_store.close()
-        phase2_store.close()
