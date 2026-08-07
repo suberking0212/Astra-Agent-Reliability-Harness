@@ -1,0 +1,119 @@
+{
+  "schema_version": "1",
+  "contract_id": "contract-s12-s13-local-sandbox-complaint",
+  "contract_version": "1",
+  "contract_hash": "sha256:94e4bc52491c9a810a1806dc681fa591381947fd255e52371bd7b05b98b95d54",
+  "task_type": "complaint_resolution",
+  "execution_type": "tool_execution",
+  "objective": {
+    "description": "Use the configured complaint business tools to verify customer cust-s12-s13-001 and delivered order order-s12-s13-001, review the damaged-goods policy, create exactly one complaint ticket with the contract-authorized reason and resolution, then submit the ticket_id, customer_id, and order_id as the task result with the effect receipt."
+  },
+  "subject_refs": [
+    {
+      "authority_domain": "commerce.local-sandbox",
+      "type": "customer",
+      "id": "cust-s12-s13-001"
+    },
+    {
+      "authority_domain": "commerce.local-sandbox",
+      "type": "order",
+      "id": "order-s12-s13-001"
+    }
+  ],
+  "input_snapshot": {
+    "schema_id": "astra.local_sandbox.complaint_input",
+    "schema_version": "1",
+    "values": {
+      "customer_id": "cust-s12-s13-001",
+      "order_id": "order-s12-s13-001",
+      "policy_query": "damaged goods complaint replacement",
+      "reason": "Delivered ceramic tea set arrived with verified transit damage.",
+      "resolution": "Open one complaint ticket for replacement review."
+    },
+    "content_hash": "sha256:0509181a6d6822b3c7d95ca2fd195552c29e632b80cce59f875395ad924e0cbc"
+  },
+  "allowed_capabilities": [
+    {
+      "capability_id": "complaints.integration",
+      "capability_version": "1"
+    }
+  ],
+  "resolved_tools": [
+    {
+      "tool_name": "get_customer",
+      "tool_version": "1",
+      "schema_hash": "sha256:104be632b03bbe095e5734adf8bfcef1dfc2c299bec6e902bdc47ae6595b3cd1",
+      "capability_ref": "complaints.integration@1",
+      "access_mode": "read"
+    },
+    {
+      "tool_name": "get_order",
+      "tool_version": "1",
+      "schema_hash": "sha256:fcd51878dc60f3bb28e9686041f2d950a7fb6aaf51b77db64d72f36dc7a20213",
+      "capability_ref": "complaints.integration@1",
+      "access_mode": "read"
+    },
+    {
+      "tool_name": "search_policy",
+      "tool_version": "1",
+      "schema_hash": "sha256:9a00999daf9b2aed8c2c1cc9d0890fb5b28ad3da4bde2a2d691187df64cfaee9",
+      "capability_ref": "complaints.integration@1",
+      "access_mode": "read"
+    },
+    {
+      "tool_name": "create_complaint_ticket",
+      "tool_version": "1",
+      "schema_hash": "sha256:c26dda6464150ae5fa5eee815d6d94455d99a8d2659d1385af34c4ae42003fc9",
+      "capability_ref": "complaints.integration@1",
+      "access_mode": "effect"
+    }
+  ],
+  "constraints": [
+    {
+      "constraint_id": "astra.exact_parameters",
+      "constraint_version": "1",
+      "kind": "parameter_scope",
+      "enforcement_point": "effect_normalizer",
+      "configuration": {
+        "parameters": {
+          "customer_id": "cust-s12-s13-001",
+          "order_id": "order-s12-s13-001",
+          "reason": "Delivered ceramic tea set arrived with verified transit damage.",
+          "resolution": "Open one complaint ticket for replacement review."
+        }
+      }
+    }
+  ],
+  "authorized_effects": [
+    {
+      "effect_intent_id": "create-local-sandbox-complaint-once",
+      "effect_type": "support.complaint_ticket",
+      "effect_type_version": "1",
+      "authority_domain": "support.local-sandbox",
+      "subject_ref": {
+        "authority_domain": "commerce.local-sandbox",
+        "type": "order",
+        "id": "order-s12-s13-001"
+      },
+      "parameter_constraints": {
+        "customer_id": "cust-s12-s13-001",
+        "order_id": "order-s12-s13-001",
+        "reason": "Delivered ceramic tea set arrived with verified transit damage.",
+        "resolution": "Open one complaint ticket for replacement review."
+      },
+      "max_confirmed_occurrences": 1
+    }
+  ],
+  "approval_requirements": [],
+  "completion_contract_ref": {
+    "contract_id": "completion-s12-s13-local-sandbox-complaint",
+    "contract_version": "1"
+  },
+  "limits": {
+    "max_attempts": 2,
+    "task_deadline": "2099-01-01T00:00:00Z",
+    "max_executions_per_attempt": 3,
+    "max_feedback_cycles": 2,
+    "max_reconcile_cycles": 3
+  }
+}

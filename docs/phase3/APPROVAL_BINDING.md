@@ -1,5 +1,14 @@
 # Phase 3 Approval Binding Contract
 
+> **Documentation Governance**
+> - **Role:** Normative approval-binding specification.
+> - **Authority:** A3 — Runtime Design / Approval Binding.
+> - **Topic:** DESIGN.GOVERNANCE.APPROVAL
+> - **Scope:** Approval requirements, requests, resolutions, credentials, exact matching, consumption, and approval interaction semantics.
+> - **Not Responsible For:** Defining effect identity, the general Task lifecycle, business policy, or operator UI/API.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY, DESIGN.GOVERNANCE.TASK_CONTRACT, DESIGN.GOVERNANCE.EFFECT_IDENTITY, DESIGN.GOVERNANCE.LIFECYCLE
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / 2026-07-20`  
 > 目标：保证一次批准只授权 Task Contract 中声明且经过规范化的精确副作用，不被复用于其他对象、参数、权限范围或 Contract version。
 

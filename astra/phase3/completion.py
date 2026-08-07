@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Protocol
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 
 from .canonical import sha256_digest
 from .effects import (
@@ -50,7 +50,9 @@ class BusinessObservation(FrozenContractModel):
     effect_identity: str
     effect_request_hash: str
     external_object_id: str
-    state: Mapping[str, Any]
+    payload: Mapping[str, Any] = Field(
+        validation_alias=AliasChoices("payload", "state")
+    )
     content_hash: str
 
     @classmethod
@@ -66,7 +68,7 @@ class BusinessObservation(FrozenContractModel):
                 "effect_identity": payload["effect_identity"],
                 "effect_request_hash": payload["effect_request_hash"],
                 "external_object_id": payload["external_object_id"],
-                "state": payload["state"],
+                "state": payload.get("payload", payload.get("state")),
             }
         )
         return cls.model_validate(payload)
@@ -82,12 +84,18 @@ class BusinessObservation(FrozenContractModel):
                 "effect_identity": self.effect_identity,
                 "effect_request_hash": self.effect_request_hash,
                 "external_object_id": self.external_object_id,
-                "state": self.state,
+                "state": self.payload,
             }
         )
         if self.content_hash != expected:
             raise ValueError("BusinessObservation content_hash mismatch")
         return self
+
+    @property
+    def state(self) -> Mapping[str, Any]:
+        """Compatibility accessor for existing completion evaluators."""
+
+        return self.payload
 
 
 class EvidenceSnapshot(FrozenContractModel):
@@ -115,6 +123,8 @@ class EvidenceSnapshot(FrozenContractModel):
     pending_interaction_kinds: tuple[str, ...] = ()
     approval_required: bool = False
     approval_matched: bool = True
+    denied_effect_refs: Mapping[str, str] = Field(default_factory=dict)
+    failed_effect_refs: Mapping[str, str] = Field(default_factory=dict)
     submitted_result_present: bool = False
     runtime_counters: Mapping[str, int] = Field(default_factory=dict)
     fact_watermark: int = Field(ge=0)
@@ -143,6 +153,8 @@ class EvidenceSnapshot(FrozenContractModel):
         payload.setdefault("pending_interaction_kinds", ())
         payload.setdefault("approval_required", False)
         payload.setdefault("approval_matched", True)
+        payload.setdefault("denied_effect_refs", {})
+        payload.setdefault("failed_effect_refs", {})
         payload.setdefault("submitted_result_present", False)
         payload.setdefault("runtime_counters", {})
         payload.setdefault("created_at", datetime.now(timezone.utc))
@@ -354,6 +366,60 @@ class RequirementEvaluatorRegistry:
                 details={"error_type": "invalid_evaluator_output"},
             )
         return result
+
+
+class DirectResponseEvidenceEvaluator:
+    """Validate persisted response evidence without judging response semantics."""
+
+    evaluator_id = "astra.direct_response_evidence"
+    evaluator_version = "1"
+
+    def evaluate(
+        self,
+        requirement: CompletionRequirement,
+        submitted_result: SubmittedResult,
+        evidence_snapshot: EvidenceSnapshot,
+    ) -> RequirementEvaluation:
+        if requirement.configuration or requirement.required_evidence:
+            raise ValueError(
+                "direct response evidence evaluator accepts no configuration"
+            )
+        assistant_output = submitted_result.outcome.get("assistant_output")
+        satisfied = bool(
+            evidence_snapshot.submitted_result_present
+            and isinstance(assistant_output, str)
+            and assistant_output.strip()
+        )
+        return RequirementEvaluation(
+            evaluation_id="evaluation:"
+            + sha256_digest(
+                {
+                    "requirement_id": requirement.requirement_id,
+                    "evaluator_id": self.evaluator_id,
+                    "evaluator_version": self.evaluator_version,
+                    "submitted_result_id": submitted_result.submitted_result_id,
+                    "evidence_snapshot_id": evidence_snapshot.evidence_snapshot_id,
+                }
+            ),
+            requirement_id=requirement.requirement_id,
+            evaluator_id=self.evaluator_id,
+            evaluator_version=self.evaluator_version,
+            submitted_result_id=submitted_result.submitted_result_id,
+            evidence_snapshot_id=evidence_snapshot.evidence_snapshot_id,
+            status=(
+                RequirementStatus.SATISFIED
+                if satisfied
+                else RequirementStatus.UNSATISFIED
+            ),
+            evidence_refs=(),
+            observed_fact_refs=(),
+            message=(
+                "Persisted direct-response evidence is present"
+                if satisfied
+                else "Persisted direct-response evidence is missing or invalid"
+            ),
+            details={"assistant_output_present": satisfied},
+        )
 
 
 class AuthorizedEffectConfirmedEvaluator:

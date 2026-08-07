@@ -1,5 +1,14 @@
 # Phase 3 Canonical Effect Identity and Idempotency Contract
 
+> **Documentation Governance**
+> - **Role:** Normative effect identity and idempotency specification.
+> - **Authority:** A3 — Runtime Design / Effect Identity.
+> - **Topic:** DESIGN.GOVERNANCE.EFFECT_IDENTITY
+> - **Scope:** CanonicalEffectRequest, normalization, hashes, effect identity, ExternalOperation identity, idempotency, and reconciliation identity.
+> - **Not Responsible For:** Approval lifecycle, Task lifecycle, business planning, scheduling, or acceptance results.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY, DESIGN.GOVERNANCE.TASK_CONTRACT
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / 2026-07-20`  
 > 目标：让 Task authorization、Tool Gateway、ExternalOperation、idempotency、Approval、duplicate-side-effect Rule 和 reconciliation 使用同一套副作用身份。
 

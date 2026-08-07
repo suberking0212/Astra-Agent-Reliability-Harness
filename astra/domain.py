@@ -28,6 +28,13 @@ class InteractionKind(str, Enum):
     APPROVAL = "approval"
 
 
+class InteractionPurpose(str, Enum):
+    """Exact waiting purpose; lifecycle state remains on Task/Execution."""
+
+    CLARIFICATION = "clarification"
+    APPROVAL = "approval"
+
+
 class ExecutionUsage(FrozenModel):
     input_tokens: int = 0
     output_tokens: int = 0
@@ -51,6 +58,15 @@ class RuntimeInvocation(FrozenModel):
     limits: Mapping[str, Any] = Field(default_factory=dict)
     session_handle: str | None = None
     feedback: Sequence[Mapping[str, Any]] = Field(default_factory=tuple)
+    evidence_receipt_ids: Sequence[str] = Field(default_factory=tuple)
+    run_request_id: str | None = None
+    lease_owner_id: str | None = None
+    lease_token: str | None = None
+    lease_expires_at: str | None = None
+    execution_profile: str = "astra_controlled"
+    execution_profile_version: str = "1"
+    execution_profile_hash: str | None = None
+    hermes_home: str | None = None
 
 
 class ExecutionResult(FrozenModel):
@@ -88,6 +104,9 @@ class ToolInvocationContext(FrozenModel):
     allowed_tools: Sequence[str]
     idempotency_key: str | None = None
     approval_token: str | None = None
+    run_request_id: str | None = None
+    lease_owner_id: str | None = None
+    lease_token: str | None = None
 
 
 class ToolResult(FrozenModel):
@@ -117,6 +136,7 @@ class InteractionRequest(FrozenModel):
     task_id: str
     attempt_id: str
     kind: InteractionKind
+    purpose: InteractionPurpose
     prompt: str
     status: str = "pending"
     payload: Mapping[str, Any] = Field(default_factory=dict)
@@ -133,4 +153,3 @@ class AgentExecutor(Protocol):
     ) -> ExecutionResult: ...
 
     async def cancel(self, execution_id: str, reason: str) -> None: ...
-

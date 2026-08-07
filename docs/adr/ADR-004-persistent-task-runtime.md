@@ -1,9 +1,18 @@
 # ADR-004: Persistent Astra Task Runtime
 
-> 状态：`ACCEPTED / PHASE 4 P4.0 FROZEN`  
-> 日期：2026-07-20  
+> **Documentation Governance**
+> - **Role:** Accepted architecture decision for the persistent Astra Task Runtime.
+> - **Authority:** A2 — Architecture / ADR.
+> - **Topic:** ARCH.PERSISTENT_TASK_RUNTIME
+> - **Scope:** Persistent authority boundary, scheduling source, restart model, checkpoint role, and lease/fencing architecture.
+> - **Not Responsible For:** Detailed Phase 3 governance semantics, command instructions, implementation status, remediation, or acceptance results.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY
+> - **Status:** FROZEN
+
+> 决策：`ACCEPTED / PHASE 4 P4.0 FROZEN`
+> 日期：2026-07-20
 > 适用范围：Phase 4 Durable Task Runtime  
-> 运行时契约：`docs/phase4/TASK_RUNTIME.md`  
+> 运行时架构：本 ADR 与 Phase 3 contracts
 > 验收矩阵：`docs/phase4/ACCEPTANCE_MATRIX.md`
 
 ## Context

@@ -1,0 +1,106 @@
+{
+  "schema_version": "1",
+  "experiment_run_id": "run-510ac77dd9d54c908b01abf1a3c3a97b",
+  "reproducibility_id": "sha256:8e59f5098a6b7857517d5112dbc5006495758ed5ea7acf62473345528f64aba7",
+  "configuration": "astra_controlled",
+  "profile_version": "1",
+  "profile_hash": "sha256:b7f9dc230dd4ebd377c9904c596c9c87e999bc3f2b112d0d36a06aff9e341e14",
+  "hermes_home": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/state/astra_controlled/hermes-home/paired-learning/rep-1/shared",
+  "hermes_source_version": "48f0587e01529a813427fc17b4793ee3a95d7e1e+dirty",
+  "astra_source_version": "48f0587e01529a813427fc17b4793ee3a95d7e1e+dirty",
+  "model_provider_identity": {
+    "provider": "custom",
+    "model": "astra-evaluation-scripted-model",
+    "mode": "scripted"
+  },
+  "scenario_id": "complaint_paired_learning",
+  "scenario_version": "1",
+  "seed": 1,
+  "repetition": 1,
+  "task_id": "evaluation:astra_controlled:complaint_paired_learning:B:1",
+  "objective": "Handle the documented damaged-kettle support request for customer cust-eval-002 and order order-eval-002. Verify the customer, order and policy, create exactly one complaint ticket with the authorized fields, and report its ticket_id.",
+  "started_at": "2026-07-29T04:44:36.809440Z",
+  "ended_at": "2026-07-29T04:45:01.553291Z",
+  "duration_seconds": 24.743851,
+  "agent_claimed_outcome": {
+    "claimed_success": true,
+    "final_answer": "Complaint handling finished and the ticket result was submitted.",
+    "submitted_outcome": {
+      "ticket_id": "ticket-fff82545c1cb45778899d3a4776ae15a",
+      "customer_id": "cust-eval-002",
+      "order_id": "order-eval-002"
+    }
+  },
+  "oracle_outcome": {
+    "oracle_id": "complaint-business-oracle",
+    "oracle_version": "1",
+    "scenario_id": "complaint_paired_learning",
+    "scenario_version": "1",
+    "authoritative_business_observations": [
+      {
+        "authority": "business_sandbox",
+        "object_type": "complaint_ticket",
+        "object": {
+          "ticket_id": "ticket-fff82545c1cb45778899d3a4776ae15a",
+          "customer_id": "cust-eval-002",
+          "order_id": "order-eval-002",
+          "reason": "Delivered electric kettle has a cracked handle documented at delivery.",
+          "resolution": "Create one complaint ticket for replacement eligibility review.",
+          "status": "open",
+          "idempotency_key": "sha256:7455f17d239a0545291619057243a480d06f6e2b92c273cf3bb97146f499417a",
+          "created_at": "2026-07-29T04:45:00.882626+00:00"
+        },
+        "matches_expected": true,
+        "authorized": true
+      }
+    ],
+    "verdict": "success",
+    "reason_codes": [],
+    "evidence_refs": [
+      {
+        "kind": "business_database",
+        "ref": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/state/astra_controlled/business/complaint_paired_learning/rep-1/B/learning_enabled/business.sqlite3",
+        "content_hash": "sha256:c8e073bb0ee207be20a35802b2984f0fafd5b340994a66914d87417b95d9e80e"
+      }
+    ]
+  },
+  "true_success": true,
+  "false_success": false,
+  "duplicate_side_effect": false,
+  "unauthorized_side_effect": false,
+  "recovered_after_interruption": false,
+  "unresolved_external_effect": false,
+  "post_cancel_side_effect": false,
+  "input_request_count": 0,
+  "approval_request_count": 0,
+  "human_intervention_count": 0,
+  "tool_call_count": 4,
+  "error_tool_call_count": 0,
+  "provider_call_count": 6,
+  "retry_count": 0,
+  "input_tokens": 60,
+  "output_tokens": 30,
+  "total_tokens": 90,
+  "estimated_cost_usd": 0.0,
+  "cost_source": "provider_usage_estimate",
+  "cost_status": "estimated",
+  "learning_artifacts": [],
+  "skill_reused": false,
+  "learning_control": "learning_enabled",
+  "task_pair_role": "B",
+  "errors": [],
+  "evidence_refs": [
+    {
+      "kind": "business_database",
+      "ref": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/state/astra_controlled/business/complaint_paired_learning/rep-1/B/learning_enabled/business.sqlite3",
+      "content_hash": "sha256:c8e073bb0ee207be20a35802b2984f0fafd5b340994a66914d87417b95d9e80e"
+    },
+    {
+      "kind": "fault_record",
+      "ref": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/deterministic-20260723/learning/astra_controlled/rep-1/learning/task-b/faults.sqlite3",
+      "content_hash": "sha256:e86f9bce5531db0464a88ac3afbda10bd72a6acb6dbe8a128b7e61d499251063"
+    }
+  ],
+  "astra_task_state": "succeeded",
+  "live_validation_status": "NOT_REQUESTED"
+}

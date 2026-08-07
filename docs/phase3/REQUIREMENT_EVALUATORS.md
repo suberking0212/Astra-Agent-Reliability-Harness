@@ -1,5 +1,14 @@
 # Phase 3 Requirement Evaluator Contract
 
+> **Documentation Governance**
+> - **Role:** Normative requirement-evaluation and completion-aggregation specification.
+> - **Authority:** A3 — Runtime Design / Completion Evaluation.
+> - **Topic:** DESIGN.GOVERNANCE.COMPLETION
+> - **Scope:** Completion requirements, evaluator registry, RequirementEvaluation, and Completion Aggregator behavior.
+> - **Not Responsible For:** Collecting mutable evidence, deciding Task actions, changing Task state, or defining business workflows.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY, DESIGN.GOVERNANCE.TASK_CONTRACT, DESIGN.GOVERNANCE.EVIDENCE
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / 2026-07-20`  
 > 旧业务耦合 Outcome Validator 被拆分为 CompletionContract、Requirement Evaluator Registry、RequirementEvaluation 和 Completion Aggregator。
 

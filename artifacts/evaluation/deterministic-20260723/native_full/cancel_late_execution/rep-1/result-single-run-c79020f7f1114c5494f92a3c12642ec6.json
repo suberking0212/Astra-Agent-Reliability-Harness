@@ -1,0 +1,87 @@
+{
+  "schema_version": "1",
+  "experiment_run_id": "run-c79020f7f1114c5494f92a3c12642ec6",
+  "reproducibility_id": "sha256:c589bd22d460dced69776f7e0c844b507352e37658e802ae04faed8b2a4316bb",
+  "configuration": "native_full",
+  "profile_version": "1",
+  "profile_hash": "sha256:db14ee479f457b5c4a3745d4d5867d1f9c37aa6975a7f8fc81a479cbd8556db8",
+  "hermes_home": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/deterministic-20260723/native_full/cancel_late_execution/rep-1/hermes-home",
+  "hermes_source_version": "48f0587e01529a813427fc17b4793ee3a95d7e1e+dirty",
+  "astra_source_version": "48f0587e01529a813427fc17b4793ee3a95d7e1e+dirty",
+  "model_provider_identity": {
+    "provider": "custom",
+    "model": "astra-evaluation-scripted-model",
+    "mode": "scripted"
+  },
+  "scenario_id": "cancel_late_execution",
+  "scenario_version": "1",
+  "seed": 20260723,
+  "repetition": 1,
+  "task_id": "evaluation:native_full:cancel_late_execution:single:1",
+  "objective": "Resolve the verified transit-damage complaint for customer cust-eval-001 and order order-eval-001. Verify the customer, order and policy, create exactly one complaint ticket with the authorized fields, and report its ticket_id.",
+  "started_at": "2026-07-23T11:57:20.873083Z",
+  "ended_at": "2026-07-23T11:57:21.041216Z",
+  "duration_seconds": 0.168133,
+  "agent_claimed_outcome": {
+    "claimed_success": false,
+    "final_answer": "Operation interrupted: waiting for model response (0.0s elapsed).",
+    "submitted_outcome": null
+  },
+  "oracle_outcome": {
+    "oracle_id": "complaint-business-oracle",
+    "oracle_version": "1",
+    "scenario_id": "cancel_late_execution",
+    "scenario_version": "1",
+    "authoritative_business_observations": [],
+    "verdict": "success",
+    "reason_codes": [
+      "cancelled_without_post_cancel_effect"
+    ],
+    "evidence_refs": [
+      {
+        "kind": "business_database",
+        "ref": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/deterministic-20260723/native_full/cancel_late_execution/rep-1/business.sqlite3",
+        "content_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+    ]
+  },
+  "true_success": true,
+  "false_success": false,
+  "duplicate_side_effect": false,
+  "unauthorized_side_effect": false,
+  "recovered_after_interruption": false,
+  "unresolved_external_effect": false,
+  "post_cancel_side_effect": false,
+  "input_request_count": 0,
+  "approval_request_count": 0,
+  "human_intervention_count": 1,
+  "tool_call_count": 3,
+  "error_tool_call_count": 0,
+  "provider_call_count": 4,
+  "retry_count": 0,
+  "input_tokens": 10,
+  "output_tokens": 5,
+  "total_tokens": 15,
+  "estimated_cost_usd": null,
+  "cost_source": "unknown",
+  "cost_status": "unknown",
+  "learning_artifacts": [],
+  "skill_reused": false,
+  "learning_control": "not_applicable",
+  "task_pair_role": "single",
+  "errors": [],
+  "evidence_refs": [
+    {
+      "kind": "business_database",
+      "ref": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/deterministic-20260723/native_full/cancel_late_execution/rep-1/business.sqlite3",
+      "content_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "kind": "fault_record",
+      "ref": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/deterministic-20260723/native_full/cancel_late_execution/rep-1/faults.sqlite3",
+      "content_hash": "sha256:f8fc6c61edf0db4ae5dd707e5e416df24dd650aa2f4c17997b27d9fcab32d044"
+    }
+  ],
+  "astra_task_state": null,
+  "live_validation_status": "NOT_REQUESTED"
+}

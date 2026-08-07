@@ -1,5 +1,14 @@
 # Phase 3 Task Rule Contract
 
+> **Documentation Governance**
+> - **Role:** Normative Task Rule specification.
+> - **Authority:** A3 — Runtime Design / Task Rules.
+> - **Topic:** DESIGN.GOVERNANCE.RULES
+> - **Scope:** Deterministic cross-object, cross-Execution/Attempt, and cross-restart governance findings.
+> - **Not Responsible For:** Hermes-local error handling, choosing lifecycle actions, modifying Task state, or invoking tools.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY, DESIGN.GOVERNANCE.EVIDENCE
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / 2026-07-20`  
 > 旧 `Failure Detector` 设计被本契约取代。Task Rule 只判断跨对象、跨 Execution/Attempt 和跨重启的治理不变量，不检测 Hermes 应负责的局部执行错误。
 

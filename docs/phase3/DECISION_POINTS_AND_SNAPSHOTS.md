@@ -1,5 +1,14 @@
 # Phase 3 Decision Points, Snapshots, Idempotency and CAS
 
+> **Documentation Governance**
+> - **Role:** Normative decision-point, snapshot-use, decision-idempotency, and CAS specification.
+> - **Authority:** A3 — Runtime Design / Decisions and CAS.
+> - **Topic:** DESIGN.GOVERNANCE.DECISIONS
+> - **Scope:** Fixed decision triggers, DecisionContext construction, evaluation identity, atomic decision application, and stale-decision handling.
+> - **Not Responsible For:** Defining evidence source authority, evaluator semantics, policy choice, or durable worker scheduling.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY, DESIGN.GOVERNANCE.LIFECYCLE, DESIGN.GOVERNANCE.EVIDENCE, DESIGN.GOVERNANCE.COMPLETION
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / 2026-07-20`  
 > 目标：保证同一触发在并发、崩溃和重启后只形成一个可应用的 Task 决策，并且决策基于一致的固定输入。
 

@@ -1,0 +1,56 @@
+{
+  "claim_limit": "Metrics describe observed runs only. Scripted-provider results validate deterministic harness behavior, not Agent autonomy or live-model behavior; scripted-provider runs do not prove learning; native_full is a non-Astra baseline; its waiting-input case verifies same-session Hermes history continuation, not Astra Runtime recovery; its process restart remains unverified as recovery; process-recovery acceptance requires actual OS process termination rather than an injected exception. Comparative superiority requires comparable live-provider data.",
+  "paired_learning": [],
+  "profiles": {
+    "astra_controlled": {
+      "duplicate_side_effect_rate": 0.0,
+      "false_success_rate": 0.0,
+      "human_intervention_count": 0,
+      "interruption_recovery_rate": 0.0,
+      "mean_latency_seconds": 23.717087,
+      "mean_tokens": 90.0,
+      "median_latency_seconds": 23.717087,
+      "median_tokens": 90.0,
+      "provider_call_count": 6,
+      "tool_call_count": 4,
+      "trials": 1,
+      "true_success_rate": 1.0,
+      "unauthorized_side_effect_rate": 0.0,
+      "unresolved_rate": 0.0
+    },
+    "astra_full_hermes": {
+      "duplicate_side_effect_rate": 0.0,
+      "false_success_rate": 0.0,
+      "human_intervention_count": 0,
+      "interruption_recovery_rate": 0.0,
+      "mean_latency_seconds": 25.913006,
+      "mean_tokens": 90.0,
+      "median_latency_seconds": 25.913006,
+      "median_tokens": 90.0,
+      "provider_call_count": 6,
+      "tool_call_count": 4,
+      "trials": 1,
+      "true_success_rate": 1.0,
+      "unauthorized_side_effect_rate": 0.0,
+      "unresolved_rate": 0.0
+    },
+    "native_full": {
+      "duplicate_side_effect_rate": 0.0,
+      "false_success_rate": 0.0,
+      "human_intervention_count": 0,
+      "interruption_recovery_rate": null,
+      "mean_latency_seconds": 33.864163,
+      "mean_tokens": 90.0,
+      "median_latency_seconds": 33.864163,
+      "median_tokens": 90.0,
+      "provider_call_count": 6,
+      "tool_call_count": 4,
+      "trials": 1,
+      "true_success_rate": 1.0,
+      "unauthorized_side_effect_rate": 0.0,
+      "unresolved_rate": 0.0
+    }
+  },
+  "report_schema_version": "1",
+  "trial_count": 3
+}

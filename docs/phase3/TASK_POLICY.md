@@ -1,5 +1,14 @@
 # Phase 3 Task Policy Contract
 
+> **Documentation Governance**
+> - **Role:** Normative Task Policy specification.
+> - **Authority:** A3 — Runtime Design / Task Policy.
+> - **Topic:** DESIGN.GOVERNANCE.POLICY
+> - **Scope:** Allowed Task-level actions, bounds, advisory feedback, and mapping from fixed decision inputs to PolicyDecision.
+> - **Not Responsible For:** Hermes tool choice, parameters, call order, business plans, direct state mutation, or rule detection.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY, DESIGN.GOVERNANCE.RULES, DESIGN.GOVERNANCE.LIFECYCLE, DESIGN.GOVERNANCE.EVIDENCE, DESIGN.GOVERNANCE.DECISIONS
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / 2026-07-20`  
 > 旧 `Recovery Engine` 和 `RecoveryDirective` 设计被本契约取代。Task Policy 只决定 Task 生命周期动作，不决定 Hermes 的 Tool、参数、调用顺序或业务计划。
 

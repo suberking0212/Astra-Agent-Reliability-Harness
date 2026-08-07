@@ -16,7 +16,7 @@ from uuid import uuid4
 from .domain import InteractionKind, InteractionRequest, ResultReceipt
 
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 18
 
 
 def _now() -> str:
@@ -194,6 +194,88 @@ class AstraStore:
                     SET version = 8, updated_at = ?
                     WHERE singleton = 1
                     """,
+                    (_now(),),
+                )
+                version = 8
+            if version == 8:
+                self._migrate_v8_to_v9(connection)
+                connection.execute(
+                    """
+                    UPDATE astra_schema
+                    SET version = 9, updated_at = ?
+                    WHERE singleton = 1
+                    """,
+                    (_now(),),
+                )
+                version = 9
+            if version == 9:
+                self._migrate_v9_to_v10(connection)
+                connection.execute(
+                    """
+                    UPDATE astra_schema
+                    SET version = 10, updated_at = ?
+                    WHERE singleton = 1
+                    """,
+                    (_now(),),
+                )
+                version = 10
+            if version == 10:
+                self._migrate_v10_to_v11(connection)
+                connection.execute(
+                    """
+                    UPDATE astra_schema
+                    SET version = 11, updated_at = ?
+                    WHERE singleton = 1
+                    """,
+                    (_now(),),
+                )
+                version = 11
+            if version == 11:
+                self._migrate_v11_to_v12(connection)
+                connection.execute(
+                    "UPDATE astra_schema SET version = 12, updated_at = ? WHERE singleton = 1",
+                    (_now(),),
+                )
+                version = 12
+            if version == 12:
+                self._migrate_v12_to_v13(connection)
+                connection.execute(
+                    "UPDATE astra_schema SET version = 13, updated_at = ? WHERE singleton = 1",
+                    (_now(),),
+                )
+                version = 13
+            if version == 13:
+                self._migrate_v13_to_v14(connection)
+                connection.execute(
+                    "UPDATE astra_schema SET version = 14, updated_at = ? WHERE singleton = 1",
+                    (_now(),),
+                )
+                version = 14
+            if version == 14:
+                self._migrate_v14_to_v15(connection)
+                connection.execute(
+                    "UPDATE astra_schema SET version = 15, updated_at = ? WHERE singleton = 1",
+                    (_now(),),
+                )
+                version = 15
+            if version == 15:
+                self._migrate_v15_to_v16(connection)
+                connection.execute(
+                    "UPDATE astra_schema SET version = 16, updated_at = ? WHERE singleton = 1",
+                    (_now(),),
+                )
+                version = 16
+            if version == 16:
+                self._migrate_v16_to_v17(connection)
+                connection.execute(
+                    "UPDATE astra_schema SET version = 17, updated_at = ? WHERE singleton = 1",
+                    (_now(),),
+                )
+                version = 17
+            if version == 17:
+                self._migrate_v17_to_v18(connection)
+                connection.execute(
+                    "UPDATE astra_schema SET version = 18, updated_at = ? WHERE singleton = 1",
                     (_now(),),
                 )
             self._validate_schema(connection)
@@ -551,6 +633,54 @@ class AstraStore:
         )
 
     @staticmethod
+    def _migrate_v8_to_v9(connection: sqlite3.Connection) -> None:
+        """Add durable recovery envelopes and reconciliation runner state."""
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS phase4_checkpoints (
+                checkpoint_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                attempt_id TEXT,
+                execution_id TEXT,
+                run_request_id TEXT,
+                boundary TEXT NOT NULL,
+                task_version INTEGER NOT NULL,
+                attempt_version INTEGER,
+                authority_hash TEXT NOT NULL,
+                envelope_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(task_id, boundary, authority_hash),
+                FOREIGN KEY(task_id) REFERENCES phase3_tasks(task_id),
+                FOREIGN KEY(attempt_id) REFERENCES phase3_attempts(attempt_id),
+                FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+                FOREIGN KEY(run_request_id)
+                    REFERENCES phase4_run_requests(run_request_id)
+            )
+            """
+        )
+        reconciliation_columns = {
+            str(row[1])
+            for row in connection.execute(
+                "PRAGMA table_info(phase3_reconciliations)"
+            )
+        }
+        additions = {
+            "version": "INTEGER NOT NULL DEFAULT 1 CHECK(version >= 1)",
+            "runner_version": "TEXT",
+            "started_at": "TEXT",
+            "completed_at": "TEXT",
+            "result_json": "TEXT",
+            "last_error_json": "TEXT",
+        }
+        for column, declaration in additions.items():
+            if column not in reconciliation_columns:
+                connection.execute(
+                    f"ALTER TABLE phase3_reconciliations "
+                    f"ADD COLUMN {column} {declaration}"
+                )
+
+    @staticmethod
     def _create_phase3_governance_tables(
         connection: sqlite3.Connection,
     ) -> None:
@@ -696,6 +826,311 @@ class AstraStore:
         )
         for statement in statements:
             connection.execute(statement)
+
+    @staticmethod
+    def _migrate_v9_to_v10(connection: sqlite3.Connection) -> None:
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(phase4_run_requests)")
+        }
+        additions = {
+            "lease_owner_id": "TEXT",
+            "lease_token": "TEXT",
+            "lease_expires_at": "TEXT",
+            "heartbeat_at": "TEXT",
+            "ownership_version": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for column, declaration in additions.items():
+            if column not in columns:
+                connection.execute(
+                    f"ALTER TABLE phase4_run_requests ADD COLUMN {column} {declaration}"
+                )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_phase4_run_requests_lease_token
+            ON phase4_run_requests(lease_token)
+            WHERE lease_token IS NOT NULL
+            """
+        )
+
+    @staticmethod
+    def _migrate_v11_to_v12(connection: sqlite3.Connection) -> None:
+        """Reserved compatibility step for databases created at schema v11."""
+
+    @staticmethod
+    def _migrate_v12_to_v13(connection: sqlite3.Connection) -> None:
+        """Remove the abandoned semantic conversation-resolution store."""
+        connection.execute("DROP TABLE IF EXISTS conversation_resolutions")
+
+    @staticmethod
+    def _migrate_v13_to_v14(connection: sqlite3.Connection) -> None:
+        """Persist transport identity without semantic routing fields."""
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS phase4_ingress_messages (
+                message_id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                turn_id TEXT NOT NULL,
+                message_hash TEXT NOT NULL,
+                task_id TEXT NOT NULL UNIQUE,
+                command_id TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                UNIQUE(conversation_id, turn_id),
+                FOREIGN KEY(task_id) REFERENCES phase3_tasks(task_id),
+                FOREIGN KEY(command_id)
+                    REFERENCES phase4_runtime_commands(command_id)
+            )
+            """
+        )
+
+    @staticmethod
+    def _migrate_v14_to_v15(connection: sqlite3.Connection) -> None:
+        """Make clarification versus approval an explicit Interaction field."""
+
+        columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(interactions)")
+        }
+        if "purpose" not in columns:
+            connection.execute("ALTER TABLE interactions ADD COLUMN purpose TEXT")
+        connection.execute(
+            """
+            UPDATE interactions
+            SET purpose = CASE
+                WHEN kind = 'approval' THEN 'approval'
+                ELSE 'clarification'
+            END
+            WHERE purpose IS NULL OR purpose = ''
+            """
+        )
+
+    @staticmethod
+    def _migrate_v15_to_v16(connection: sqlite3.Connection) -> None:
+        """Fail closed for immutable legacy ``conversation`` Contracts."""
+
+        now = _now()
+        rows = connection.execute(
+            "SELECT task_id, current_attempt_id, contract_json FROM phase3_tasks"
+        ).fetchall()
+        for row in rows:
+            try:
+                contract = json.loads(str(row["contract_json"]))
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if contract.get("execution_type") != "conversation":
+                continue
+            task_id = str(row["task_id"])
+            connection.execute(
+                """
+                UPDATE phase3_tasks
+                SET state = 'failed', version = version + 1,
+                    termination_reason = 'contract_runtime_incompatible',
+                    updated_at = ?
+                WHERE task_id = ?
+                  AND state NOT IN ('succeeded', 'failed', 'cancelled')
+                """,
+                (now, task_id),
+            )
+
+            connection.execute(
+                """
+                UPDATE phase3_attempts
+                SET state = 'failed', version = version + 1,
+                    ended_at = COALESCE(ended_at, ?),
+                    termination_reason = 'contract_runtime_incompatible'
+                WHERE task_id = ?
+                  AND state NOT IN (
+                    'completed', 'failed', 'exhausted', 'superseded', 'cancelled'
+                  )
+                """,
+                (now, task_id),
+            )
+            connection.execute(
+                """
+                UPDATE executions
+                SET status = 'interrupted', ended_at = COALESCE(ended_at, ?),
+                    termination_reason = 'contract_runtime_incompatible'
+                WHERE task_id = ? AND ended_at IS NULL
+                """,
+                (now, task_id),
+            )
+            connection.execute(
+                """
+                UPDATE phase4_run_requests
+                SET state = 'cancelled',
+                    termination_reason = 'contract_runtime_incompatible',
+                    terminated_at = COALESCE(terminated_at, ?)
+                WHERE task_id = ? AND state IN ('pending', 'claimed')
+                """,
+                (now, task_id),
+            )
+            connection.execute(
+                """
+                UPDATE interactions
+                SET status = 'cancelled', version = version + 1,
+                    resolved_at = COALESCE(resolved_at, ?)
+                WHERE task_id = ? AND status = 'pending'
+                """,
+                (now, task_id),
+            )
+        connection.execute("DROP VIEW IF EXISTS phase3_interactions")
+        connection.execute(
+            """
+            CREATE VIEW phase3_interactions AS
+            SELECT interaction_id, task_id, attempt_id, kind, purpose, status,
+                   version, payload_json, created_by_decision_id, created_at
+            FROM interactions
+            """
+        )
+
+    @staticmethod
+    def _migrate_v16_to_v17(connection: sqlite3.Connection) -> None:
+        """Add append-only runtime subject and exact-effect authority records."""
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS phase4_subject_grants (
+                grant_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                authority_domain TEXT NOT NULL,
+                subject_type TEXT NOT NULL,
+                subject_id TEXT NOT NULL,
+                access_scope TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_ref TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                revoked_at TEXT,
+                UNIQUE(
+                    task_id, authority_domain, subject_type, subject_id,
+                    access_scope, source_type, source_ref
+                ),
+                FOREIGN KEY(task_id) REFERENCES phase3_tasks(task_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS phase4_dynamic_effect_intents (
+                task_id TEXT NOT NULL,
+                effect_intent_id TEXT NOT NULL,
+                effect_json TEXT NOT NULL,
+                approval_requirement_json TEXT NOT NULL,
+                source_tool_name TEXT NOT NULL,
+                source_arguments_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(task_id, effect_intent_id),
+                UNIQUE(task_id, source_tool_name, source_arguments_hash),
+                FOREIGN KEY(task_id) REFERENCES phase3_tasks(task_id)
+            )
+            """
+        )
+
+    @staticmethod
+    def _migrate_v17_to_v18(connection: sqlite3.Connection) -> None:
+        """Add immutable, content-free learning candidate evidence links."""
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS learning_candidate_evidence (
+                association_id TEXT PRIMARY KEY,
+                candidate_ref TEXT NOT NULL,
+                artifact_kind TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                hermes_home_fingerprint TEXT NOT NULL,
+                generation_origin TEXT NOT NULL,
+                task_id TEXT,
+                attempt_id TEXT,
+                execution_id TEXT,
+                completion_validation_id TEXT,
+                oracle_status TEXT,
+                safety_status TEXT,
+                evidence_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(candidate_ref, execution_id)
+            )
+            """
+        )
+    @staticmethod
+    def _migrate_v10_to_v11(connection: sqlite3.Connection) -> None:
+        """Make Run Request ineligibility durable and transaction-coupled."""
+
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(phase4_run_requests)")
+        }
+        additions = {
+            "termination_reason": "TEXT",
+            "terminated_at": "TEXT",
+        }
+        for column, declaration in additions.items():
+            if column not in columns:
+                connection.execute(
+                    f"ALTER TABLE phase4_run_requests ADD COLUMN {column} {declaration}"
+                )
+
+        connection.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS
+                phase4_cancel_pending_requests_for_terminal_task
+            AFTER UPDATE OF state, termination_reason ON phase3_tasks
+            WHEN NEW.state IN ('succeeded', 'failed', 'cancelled')
+            BEGIN
+                UPDATE phase4_run_requests
+                SET state = 'cancelled',
+                    termination_reason = COALESCE(
+                        termination_reason,
+                        NEW.termination_reason,
+                        'task_' || NEW.state
+                    ),
+                    terminated_at = COALESCE(terminated_at, NEW.updated_at)
+                WHERE task_id = NEW.task_id AND state = 'pending';
+            END
+            """
+        )
+        connection.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS
+                phase4_cancel_pending_requests_for_terminal_attempt
+            AFTER UPDATE OF state, termination_reason ON phase3_attempts
+            WHEN NEW.state IN (
+                'completed', 'failed', 'exhausted', 'superseded', 'cancelled'
+            )
+            BEGIN
+                UPDATE phase4_run_requests
+                SET state = 'cancelled',
+                    termination_reason = COALESCE(
+                        termination_reason,
+                        NEW.termination_reason,
+                        'attempt_' || NEW.state
+                    ),
+                    terminated_at = COALESCE(
+                        terminated_at,
+                        NEW.ended_at,
+                        CURRENT_TIMESTAMP
+                    )
+                WHERE attempt_id = NEW.attempt_id AND state = 'pending';
+            END
+            """
+        )
+        connection.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS
+                phase4_cancel_pending_requests_for_noncurrent_attempt
+            AFTER UPDATE OF current_attempt_id ON phase3_tasks
+            BEGIN
+                UPDATE phase4_run_requests
+                SET state = 'cancelled',
+                    termination_reason = COALESCE(
+                        termination_reason,
+                        'attempt_not_current'
+                    ),
+                    terminated_at = COALESCE(terminated_at, NEW.updated_at)
+                WHERE task_id = NEW.task_id
+                  AND attempt_id != NEW.current_attempt_id
+                  AND state = 'pending';
+            END
+            """
+        )
 
     @staticmethod
     def _rebuild_interactions_v5(connection: sqlite3.Connection) -> None:
@@ -1214,6 +1649,22 @@ class AstraStore:
     def _validate_schema(connection: sqlite3.Connection) -> None:
         required_columns = {
             "astra_schema": {"singleton", "version", "updated_at"},
+            "learning_candidate_evidence": {
+                "association_id",
+                "candidate_ref",
+                "artifact_kind",
+                "profile_id",
+                "hermes_home_fingerprint",
+                "generation_origin",
+                "task_id",
+                "attempt_id",
+                "execution_id",
+                "completion_validation_id",
+                "oracle_status",
+                "safety_status",
+                "evidence_hash",
+                "created_at",
+            },
             "executions": {
                 "execution_id",
                 "task_id",
@@ -1239,6 +1690,7 @@ class AstraStore:
                 "task_id",
                 "attempt_id",
                 "kind",
+                "purpose",
                 "prompt",
                 "status",
                 "version",
@@ -1329,6 +1781,12 @@ class AstraStore:
                 "status",
                 "created_by_decision_id",
                 "created_at",
+                "version",
+                "runner_version",
+                "started_at",
+                "completed_at",
+                "result_json",
+                "last_error_json",
             },
             "phase3_external_operations": {
                 "operation_id",
@@ -1481,6 +1939,36 @@ class AstraStore:
                 "result_json",
                 "created_at",
             },
+            "phase4_ingress_messages": {
+                "message_id",
+                "conversation_id",
+                "turn_id",
+                "message_hash",
+                "task_id",
+                "command_id",
+                "created_at",
+            },
+            "phase4_subject_grants": {
+                "grant_id",
+                "task_id",
+                "authority_domain",
+                "subject_type",
+                "subject_id",
+                "access_scope",
+                "source_type",
+                "source_ref",
+                "created_at",
+                "revoked_at",
+            },
+            "phase4_dynamic_effect_intents": {
+                "task_id",
+                "effect_intent_id",
+                "effect_json",
+                "approval_requirement_json",
+                "source_tool_name",
+                "source_arguments_hash",
+                "created_at",
+            },
             "phase4_run_requests": {
                 "run_request_id",
                 "task_id",
@@ -1495,6 +1983,13 @@ class AstraStore:
                 "source_interaction_id",
                 "session_handle",
                 "feedback_json",
+                "lease_owner_id",
+                "lease_token",
+                "lease_expires_at",
+                "heartbeat_at",
+                "ownership_version",
+                "termination_reason",
+                "terminated_at",
             },
             "phase4_execution_results": {
                 "execution_id",
@@ -1509,6 +2004,19 @@ class AstraStore:
                 "expected_task_version",
                 "reason",
                 "payload_hash",
+                "created_at",
+            },
+            "phase4_checkpoints": {
+                "checkpoint_id",
+                "task_id",
+                "attempt_id",
+                "execution_id",
+                "run_request_id",
+                "boundary",
+                "task_version",
+                "attempt_version",
+                "authority_hash",
+                "envelope_json",
                 "created_at",
             },
         }
@@ -1566,6 +2074,7 @@ class AstraStore:
                 "task_id",
                 "attempt_id",
                 "kind",
+                "purpose",
                 "status",
                 "version",
                 "payload_json",
@@ -1589,7 +2098,7 @@ class AstraStore:
                 names = ", ".join(sorted(missing_columns))
                 raise RuntimeError(f"Database schema is incomplete: {view}.({names})")
 
-        named_indexes = {
+        named_indexes: dict[str, dict[str, tuple[tuple[str, ...], bool]]] = {
             "executions": {
                 "ux_executions_run_request_id": (("run_request_id",), True),
             },
@@ -1614,6 +2123,10 @@ class AstraStore:
                     ("source_interaction_id",),
                     True,
                 ),
+                "ux_phase4_run_requests_lease_token": (
+                    ("lease_token",),
+                    True,
+                ),
             },
             "phase3_approval_resolutions": {
                 "ux_phase3_approval_resolutions_request_id": (
@@ -1626,12 +2139,12 @@ class AstraStore:
                 ),
             },
         }
-        for table, expected_indexes in named_indexes.items():
+        for table, table_named_indexes in named_indexes.items():
             available = {
                 str(row[1]): (bool(row[2]), bool(row[4]))
                 for row in connection.execute(f"PRAGMA index_list({table})")
             }
-            for name, (expected_columns, expected_partial) in expected_indexes.items():
+            for name, (expected_columns, expected_partial) in table_named_indexes.items():
                 properties = available.get(name)
                 if properties != (True, expected_partial):
                     raise RuntimeError(
@@ -1654,7 +2167,7 @@ class AstraStore:
                         f"Database schema is incompatible: partial index {name}"
                     )
 
-        required_unique_indexes = {
+        required_unique_indexes: dict[str, set[tuple[str, ...]]] = {
             "execution_events": {("execution_id", "event_type")},
             "phase3_attempts": {
                 ("created_by_decision_id",),
@@ -1672,9 +2185,29 @@ class AstraStore:
             },
             "phase3_outbox": {("fact_id",)},
             "phase4_run_requests": {("created_by_command_id",)},
+            "phase4_ingress_messages": {
+                ("task_id",),
+                ("command_id",),
+                ("conversation_id", "turn_id"),
+            },
+            "phase4_subject_grants": {
+                (
+                    "task_id",
+                    "authority_domain",
+                    "subject_type",
+                    "subject_id",
+                    "access_scope",
+                    "source_type",
+                    "source_ref",
+                ),
+            },
+            "phase4_dynamic_effect_intents": {
+                ("task_id", "source_tool_name", "source_arguments_hash"),
+            },
             "phase4_execution_results": {("command_id",)},
+            "phase4_checkpoints": {("task_id", "boundary", "authority_hash")},
         }
-        for table, expected_indexes in required_unique_indexes.items():
+        for table, table_unique_indexes in required_unique_indexes.items():
             actual_indexes: set[tuple[str, ...]] = set()
             for row in connection.execute(f"PRAGMA index_list({table})"):
                 if not bool(row[2]):
@@ -1686,7 +2219,7 @@ class AstraStore:
                         for info in connection.execute(f"PRAGMA index_info({name})")
                     )
                 )
-            missing_indexes = expected_indexes.difference(actual_indexes)
+            missing_indexes = table_unique_indexes.difference(actual_indexes)
             if missing_indexes:
                 raise RuntimeError(
                     f"Database schema is incomplete: unique constraints on {table}"

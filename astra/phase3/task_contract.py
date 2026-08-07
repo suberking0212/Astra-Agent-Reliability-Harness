@@ -32,6 +32,21 @@ class ToolAccessMode(str, Enum):
     RESULT_SUBMISSION = "result_submission"
 
 
+class ExecutionType(str, Enum):
+    """Structured execution path selected by the Task producer.
+
+    ``direct_response`` and ``tool_execution`` are base execution paths.
+    ``interaction_required`` and ``approval_required`` are initial waiting
+    branches. Runtime lifecycle waits remain ``waiting_input`` and
+    ``waiting_approval`` and never become execution types.
+    """
+
+    DIRECT_RESPONSE = "direct_response"
+    TOOL_EXECUTION = "tool_execution"
+    INTERACTION_REQUIRED = "interaction_required"
+    APPROVAL_REQUIRED = "approval_required"
+
+
 class EnforcementPoint(str, Enum):
     RUNTIME = "runtime"
     TOOL_GATEWAY = "tool_gateway"
@@ -161,7 +176,7 @@ class TaskContract(FrozenContractModel):
     contract_version: str
     contract_hash: str
     task_type: str
-    execution_type: str
+    execution_type: ExecutionType
     objective: Objective
     subject_refs: tuple[SubjectRef, ...]
     input_snapshot: InputSnapshot
@@ -212,12 +227,11 @@ class TaskContract(FrozenContractModel):
         intent_ids = [item.effect_intent_id for item in self.authorized_effects]
         if len(intent_ids) != len(set(intent_ids)):
             raise ContractValidationError("effect_intent_id must be unique")
-        if any(
-            tool.access_mode == ToolAccessMode.EFFECT for tool in self.resolved_tools
-        ) and not intent_ids:
-            raise ContractValidationError(
-                "Effect tools require at least one authorized effect intent"
-            )
+        # Effect tool visibility is a capability envelope, not proof that a
+        # concrete side effect has already been authorized. Exact effect
+        # intents may be appended by the governed runtime after the Agent
+        # proposes a fully normalized call. This keeps planning dynamic while
+        # preserving fail-closed execution at the Gateway boundary.
 
         requirement_refs = [item.ref for item in self.approval_requirements]
         if len(requirement_refs) != len(set(requirement_refs)):
@@ -276,7 +290,9 @@ class TaskContract(FrozenContractModel):
         ]
         if len(matches) != 1:
             raise ContractValidationError(
-                f"Expected one authorized effect intent {effect_intent_id!r}"
+                f"Expected one authorized effect intent {effect_intent_id!r}; "
+                f"found {len(matches)} among "
+                f"{[item.effect_intent_id for item in self.authorized_effects]!r}"
             )
         return matches[0]
 

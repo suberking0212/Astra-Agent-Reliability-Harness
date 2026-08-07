@@ -229,15 +229,21 @@ def choose_policy_action(
     approval_matched: bool,
     external_operation_status: ExternalOperationStatus | None,
     completion_status: CompletionStatus,
+    approval_denied: bool = False,
+    governed_effect_failed: bool = False,
 ) -> tuple[PolicyAction, str]:
     """Frozen normal mapping without prescribing any Hermes tool sequence."""
 
+    if approval_denied:
+        return PolicyAction.FAIL, "approval_denied_effect_not_executed"
+    if external_operation_status == ExternalOperationStatus.INDETERMINATE:
+        return PolicyAction.RECONCILE, "external_operation_indeterminate"
+    if governed_effect_failed:
+        return PolicyAction.CONTINUE_WITH_FEEDBACK, "governed_effect_failed"
     if not input_complete:
         return PolicyAction.REQUEST_INPUT, "required_input_missing"
     if approval_required and not approval_matched:
         return PolicyAction.REQUEST_APPROVAL, "required_approval_missing"
-    if external_operation_status == ExternalOperationStatus.INDETERMINATE:
-        return PolicyAction.RECONCILE, "external_operation_indeterminate"
     if completion_status == CompletionStatus.SATISFIED:
         return PolicyAction.COMPLETE, "completion_requirements_satisfied"
     if completion_status == CompletionStatus.INDETERMINATE:

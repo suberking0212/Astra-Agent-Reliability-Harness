@@ -1,5 +1,14 @@
 # Phase 3 Task Lifecycle Contract
 
+> **Documentation Governance**
+> - **Role:** Normative Task/Attempt/Execution/Interaction domain lifecycle specification.
+> - **Authority:** A3 — Runtime Design / Domain Lifecycle.
+> - **Topic:** DESIGN.GOVERNANCE.LIFECYCLE
+> - **Scope:** Stable identities, states, transitions, interaction ownership, completion, and escalation boundaries.
+> - **Not Responsible For:** Durable queue mechanics, checkpoint/recovery implementation, Workflow design, or Python stack restoration.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / 2026-07-20`  
 > 本文只定义 Task、Attempt、Execution 和 Interaction 的生命周期契约，不实现调度器、Workflow Engine 或 Python 调用栈恢复。
 

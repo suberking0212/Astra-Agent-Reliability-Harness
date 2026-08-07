@@ -1,4 +1,9 @@
-"""Storage/transaction component tests; not Production Batch acceptance."""
+"""Storage/transaction component tests; not Production Batch acceptance.
+
+Constructed claims, lease tokens, and ``ExecutionResult`` values exercise
+persistence and fencing APIs only.  They do not prove real Worker ownership,
+Receipt production, Completion evaluation, or process recovery.
+"""
 
 from __future__ import annotations
 
@@ -27,16 +32,28 @@ from astra.runtime import (
     TaskRuntime,
 )
 from astra.storage import CURRENT_SCHEMA_VERSION, AstraStore
+from astra.tool_catalog import allowed_capabilities, resolved_tools
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "phase3_contract_round2.json"
 CLAIM_TIME = datetime(2026, 7, 20, 12, tzinfo=timezone.utc)
 READY_AT = "2026-07-20T00:00:00+00:00"
+LEASE_OWNER_ID = "test-phase4-worker"
+LEASE_DURATION_SECONDS = 30.0
 
 
 def _contract() -> TaskContract:
     fixture = json.loads(FIXTURE_PATH.read_text())
-    return TaskContract.materialize(fixture["scenarios"][0]["task_contract"])
+    payload = fixture["scenarios"][0]["task_contract"]
+    payload["allowed_capabilities"] = [
+        item.model_dump(mode="json")
+        for item in allowed_capabilities(("create_complaint_ticket",))
+    ]
+    payload["resolved_tools"] = [
+        item.model_dump(mode="json")
+        for item in resolved_tools(("create_complaint_ticket",))
+    ]
+    return TaskContract.materialize(payload)
 
 
 def _deadline_contract(
@@ -75,7 +92,7 @@ def _independent_contract(
             "contract_id": contract_id,
             "contract_version": "1",
             "task_type": task_type,
-            "execution_type": "deterministic_executor",
+            "execution_type": "tool_execution",
             "objective": {
                 "description": "Evaluate the submitted result under its contract."
             },
@@ -201,6 +218,153 @@ def test_newer_schema_version_is_rejected(tmp_path):
 
     with pytest.raises(RuntimeError, match="newer than supported"):
         AstraStore(database)
+
+
+def test_schema_v12_removes_abandoned_conversation_resolution_table(tmp_path):
+    database = tmp_path / "schema-v12-conversation-resolution.sqlite3"
+    store = AstraStore(database)
+    store.close()
+
+    connection = sqlite3.connect(database)
+    connection.execute(
+        "CREATE TABLE conversation_resolutions (resolution_id TEXT PRIMARY KEY)"
+    )
+    connection.execute(
+        "UPDATE astra_schema SET version = 12 WHERE singleton = 1"
+    )
+    connection.commit()
+    connection.close()
+
+    migrated = AstraStore(database)
+    try:
+        assert migrated.schema_version == CURRENT_SCHEMA_VERSION
+        assert migrated.query_one(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'conversation_resolutions'
+            """
+        ) is None
+    finally:
+        migrated.close()
+
+
+def test_schema_v15_marks_legacy_conversation_contract_nonrecoverable(tmp_path):
+    database = tmp_path / "schema-v15-legacy-conversation.sqlite3"
+    store = AstraStore(database)
+    legacy_contract = _contract().model_dump(mode="json", exclude_none=True)
+    legacy_contract["execution_type"] = "conversation"
+    now = "2026-07-24T00:00:00+00:00"
+    with store.transaction() as connection:
+        connection.execute(
+            "UPDATE astra_schema SET version = 15 WHERE singleton = 1"
+        )
+        connection.execute(
+            """
+            INSERT INTO phase3_tasks(
+                task_id, contract_json, contract_id, contract_version,
+                contract_hash, state, version, current_attempt_id,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 'waiting_input', 1, ?, ?, ?)
+            """,
+            (
+                "task:legacy-conversation",
+                json.dumps(legacy_contract, sort_keys=True),
+                legacy_contract["contract_id"],
+                legacy_contract["contract_version"],
+                legacy_contract["contract_hash"],
+                "attempt:legacy-conversation",
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO phase3_attempts(
+                attempt_id, task_id, ordinal, state, version, created_at
+            ) VALUES (?, ?, 1, 'waiting', 1, ?)
+            """,
+            ("attempt:legacy-conversation", "task:legacy-conversation", now),
+        )
+        connection.execute(
+            """
+            INSERT INTO phase4_runtime_commands(
+                command_id, command_type, payload_hash, result_json, created_at
+            ) VALUES (?, 'submit_task', 'sha256:legacy', '{}', ?)
+            """,
+            ("submit:legacy-conversation", now),
+        )
+        connection.execute(
+            """
+            INSERT INTO phase4_run_requests(
+                run_request_id, task_id, attempt_id, reason, state,
+                priority, ready_at, created_by_command_id, created_at
+            ) VALUES (?, ?, ?, 'interaction_resolved', 'pending', 0, ?, ?, ?)
+            """,
+            (
+                "run-request:legacy-conversation",
+                "task:legacy-conversation",
+                "attempt:legacy-conversation",
+                now,
+                "submit:legacy-conversation",
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO interactions(
+                interaction_id, execution_id, task_id, attempt_id, kind,
+                purpose, prompt, status, version, payload_json, created_at
+            ) VALUES (?, NULL, ?, ?, 'user_input', 'clarification', ?,
+                      'pending', 1, '{}', ?)
+            """,
+            (
+                "interaction:legacy-conversation",
+                "task:legacy-conversation",
+                "attempt:legacy-conversation",
+                "legacy prompt",
+                now,
+            ),
+        )
+    store.close()
+
+    migrated = AstraStore(database)
+    try:
+        task = migrated.query_one(
+            "SELECT state, termination_reason, contract_json FROM phase3_tasks WHERE task_id = ?",
+            ("task:legacy-conversation",),
+        )
+        attempt = migrated.query_one(
+            "SELECT state, termination_reason FROM phase3_attempts WHERE attempt_id = ?",
+            ("attempt:legacy-conversation",),
+        )
+        request = migrated.query_one(
+            "SELECT state, termination_reason FROM phase4_run_requests WHERE run_request_id = ?",
+            ("run-request:legacy-conversation",),
+        )
+        interaction = migrated.query_one(
+            "SELECT status FROM interactions WHERE interaction_id = ?",
+            ("interaction:legacy-conversation",),
+        )
+        assert json.loads(task["contract_json"])["execution_type"] == "conversation"
+        assert (task["state"], task["termination_reason"]) == (
+            "failed",
+            "contract_runtime_incompatible",
+        )
+        assert (attempt["state"], attempt["termination_reason"]) == (
+            "failed",
+            "contract_runtime_incompatible",
+        )
+        assert (request["state"], request["termination_reason"]) == (
+            "cancelled",
+            "contract_runtime_incompatible",
+        )
+        assert interaction["status"] == "cancelled"
+        assert migrated.query_one(
+            "SELECT COUNT(*) FROM executions WHERE task_id = ?",
+            ("task:legacy-conversation",),
+        )[0] == 0
+    finally:
+        migrated.close()
 
 
 def test_schema_v1_migrates_execution_relation_without_rewriting_history(
@@ -342,6 +506,7 @@ def test_submit_task_survives_process_restart_and_replays_original_result(tmp_pa
     )
     store.close()
 
+
     script = """
 import sys
 from astra.phase3.task_contract import TaskContract
@@ -376,6 +541,56 @@ store.close()
         assert _count(audit, "phase4_runtime_commands") == 1
     finally:
         audit.close()
+
+
+def test_claiming_explicit_run_request_cannot_consume_older_recovery_work(tmp_path):
+    store = AstraStore(tmp_path / "foreground-run-request.sqlite3")
+    runtime = TaskRuntime(store)
+    limits = {
+        "max_attempts": 1,
+        "task_deadline": "2099-01-01T00:00:00Z",
+        "max_executions_per_attempt": 2,
+        "max_feedback_cycles": 0,
+        "max_reconcile_cycles": 0,
+    }
+    contract_a = _independent_contract(
+        contract_id="contract:old-recovery",
+        task_type="old_recovery",
+        completion_contract_id="completion:old-recovery",
+        limits=limits,
+    )
+    contract_b = _independent_contract(
+        contract_id="contract:new-message",
+        task_type="new_message",
+        completion_contract_id="completion:new-message",
+        limits=limits,
+    )
+    old = runtime.submit_task(
+        command_id="submit:old-recovery",
+        task_id="task:old-recovery",
+        contract=contract_a,
+    )
+    new = runtime.submit_task(
+        command_id="submit:new-message",
+        task_id="task:new-message",
+        contract=contract_b,
+    )
+
+    claim = runtime.claim_and_start_execution(
+        lease_owner_id="worker:foreground",
+        lease_duration_seconds=30,
+        run_request_id=new.run_request_id,
+    )
+
+    assert claim is not None
+    assert claim.task_id == new.task_id
+    assert claim.attempt_id == new.attempt_id
+    assert claim.run_request_id == new.run_request_id
+    assert store.query_one(
+        "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+        (old.run_request_id,),
+    )["state"] == "pending"
+    store.close()
 
 
 def test_submit_task_command_identity_conflict_is_stable(tmp_path):
@@ -449,6 +664,8 @@ def test_claim_and_start_execution_commits_one_atomic_lifecycle(tmp_path):
     )
     try:
         result = runtime.claim_and_start_execution(
+            lease_owner_id=LEASE_OWNER_ID,
+            lease_duration_seconds=LEASE_DURATION_SECONDS,
             execution_id="execution-claim",
             now=CLAIM_TIME,
         )
@@ -480,7 +697,11 @@ def test_claim_and_start_execution_leaves_future_request_pending(tmp_path):
         ready_at="2026-07-20T13:00:00+00:00",
     )
     try:
-        assert runtime.claim_and_start_execution(now=CLAIM_TIME) is None
+        assert runtime.claim_and_start_execution(
+            lease_owner_id=LEASE_OWNER_ID,
+            lease_duration_seconds=LEASE_DURATION_SECONDS,
+            now=CLAIM_TIME,
+        ) is None
         request = store.query_one(
             "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
             (submission.run_request_id,),
@@ -498,7 +719,7 @@ def test_claim_and_start_execution_leaves_future_request_pending(tmp_path):
         ("phase3_attempts", "attempt_id", "completed", "attempt_not_active"),
     ),
 )
-def test_claim_and_start_execution_rejects_ineligible_lifecycle_state(
+def test_claim_and_start_execution_cancels_ineligible_lifecycle_state(
     tmp_path,
     table,
     identity_column,
@@ -516,20 +737,45 @@ def test_claim_and_start_execution_rejects_ineligible_lifecycle_state(
     identity = (
         submission.task_id if identity_column == "task_id" else submission.attempt_id
     )
+    trigger = (
+        "phase4_cancel_pending_requests_for_terminal_task"
+        if table == "phase3_tasks"
+        else "phase4_cancel_pending_requests_for_terminal_attempt"
+    )
+    store.connection.execute(f"DROP TRIGGER {trigger}")
     store.connection.execute(
         f"UPDATE {table} SET state = ? WHERE {identity_column} = ?",
         (state, identity),
     )
     try:
-        with pytest.raises(ExecutionEligibilityError, match=expected_code) as error:
-            runtime.claim_and_start_execution(now=CLAIM_TIME)
-        assert error.value.code == expected_code
+        assert runtime.claim_and_start_execution(
+            lease_owner_id=LEASE_OWNER_ID,
+            lease_duration_seconds=LEASE_DURATION_SECONDS,
+            now=CLAIM_TIME,
+        ) is None
         request = store.query_one(
-            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+            """
+            SELECT state, termination_reason
+            FROM phase4_run_requests WHERE run_request_id = ?
+            """,
             (submission.run_request_id,),
         )
-        assert request["state"] == "pending"
+        assert (request["state"], request["termination_reason"]) == (
+            "cancelled",
+            expected_code,
+        )
         assert _count(store, "executions") == 0
+        checkpoint = store.query_one(
+            """
+            SELECT boundary, envelope_json FROM phase4_checkpoints
+            WHERE run_request_id = ? AND boundary = 'run_request_cancelled'
+            """,
+            (submission.run_request_id,),
+        )
+        assert checkpoint is not None
+        assert json.loads(checkpoint["envelope_json"])["references"] == {
+            "termination_reason": expected_code
+        }
     finally:
         store.close()
 
@@ -548,13 +794,11 @@ def test_claim_and_start_execution_enforces_task_deadline(tmp_path):
         ready_at=READY_AT,
     )
     try:
-        with pytest.raises(
-            ExecutionEligibilityError, match="task_deadline_exceeded"
-        ) as error:
-            runtime.claim_and_start_execution(
-                now=datetime(2026, 7, 21, tzinfo=timezone.utc)
-            )
-        assert error.value.code == "task_deadline_exceeded"
+        assert runtime.claim_and_start_execution(
+            lease_owner_id=LEASE_OWNER_ID,
+            lease_duration_seconds=LEASE_DURATION_SECONDS,
+            now=datetime(2026, 7, 21, tzinfo=timezone.utc),
+        ) is None
         task = store.query_one(
             """
             SELECT state, version, termination_reason
@@ -570,7 +814,10 @@ def test_claim_and_start_execution_enforces_task_deadline(tmp_path):
             (submission.attempt_id,),
         )
         request = store.query_one(
-            "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
+            """
+            SELECT state, termination_reason
+            FROM phase4_run_requests WHERE run_request_id = ?
+            """,
             (submission.run_request_id,),
         )
         assert (task["state"], task["version"], task["termination_reason"]) == (
@@ -583,7 +830,10 @@ def test_claim_and_start_execution_enforces_task_deadline(tmp_path):
             attempt["version"],
             attempt["termination_reason"],
         ) == ("failed", 2, "task_deadline_exceeded")
-        assert request["state"] == "pending"
+        assert (request["state"], request["termination_reason"]) == (
+            "cancelled",
+            "task_deadline_exceeded",
+        )
         assert _count(store, "executions") == 0
     finally:
         store.close()
@@ -605,13 +855,11 @@ def test_claim_and_start_execution_exhausts_attempt_at_attempt_deadline(
         ready_at=READY_AT,
     )
     try:
-        with pytest.raises(
-            ExecutionEligibilityError, match="attempt_deadline_exceeded"
-        ) as error:
-            runtime.claim_and_start_execution(
-                now=datetime(2026, 7, 21, tzinfo=timezone.utc)
-            )
-        assert error.value.code == "attempt_deadline_exceeded"
+        assert runtime.claim_and_start_execution(
+            lease_owner_id=LEASE_OWNER_ID,
+            lease_duration_seconds=LEASE_DURATION_SECONDS,
+            now=datetime(2026, 7, 21, tzinfo=timezone.utc),
+        ) is None
         task = store.query_one(
             """
             SELECT state, version, termination_reason
@@ -636,7 +884,78 @@ def test_claim_and_start_execution_exhausts_attempt_at_attempt_deadline(
             attempt["version"],
             attempt["termination_reason"],
         ) == ("exhausted", 2, "attempt_deadline_exceeded")
+        request = store.query_one(
+            """
+            SELECT state, termination_reason
+            FROM phase4_run_requests WHERE run_request_id = ?
+            """,
+            (submission.run_request_id,),
+        )
+        assert (request["state"], request["termination_reason"]) == (
+            "cancelled",
+            "attempt_deadline_exceeded",
+        )
         assert _count(store, "executions") == 0
+    finally:
+        store.close()
+
+
+def test_claim_cleans_poison_request_and_continues_to_next_legal_request(tmp_path):
+    store = AstraStore(tmp_path / "poison-queue.sqlite3")
+    runtime = TaskRuntime(store)
+    poison = runtime.submit_task(
+        command_id="submit-poison",
+        task_id="task-poison",
+        contract=_contract(),
+        priority=10,
+        ready_at=READY_AT,
+    )
+    legal = runtime.submit_task(
+        command_id="submit-legal-after-poison",
+        task_id="task-legal-after-poison",
+        contract=_contract(),
+        priority=0,
+        ready_at=READY_AT,
+    )
+    store.connection.execute(
+        "DROP TRIGGER phase4_cancel_pending_requests_for_terminal_task"
+    )
+    store.connection.execute(
+        "UPDATE phase3_tasks SET state = 'succeeded' WHERE task_id = ?",
+        (poison.task_id,),
+    )
+    try:
+        claim = runtime.claim_and_start_execution(
+            lease_owner_id=LEASE_OWNER_ID,
+            lease_duration_seconds=LEASE_DURATION_SECONDS,
+            execution_id="execution-after-poison",
+            now=CLAIM_TIME,
+        )
+        assert claim is not None
+        assert claim.run_request_id == legal.run_request_id
+        poison_request = store.query_one(
+            """
+            SELECT state, termination_reason FROM phase4_run_requests
+            WHERE run_request_id = ?
+            """,
+            (poison.run_request_id,),
+        )
+        assert (poison_request["state"], poison_request["termination_reason"]) == (
+            "cancelled",
+            "task_not_executable",
+        )
+        assert _count(store, "executions") == 1
+        assert store.query_one(
+            "SELECT run_request_id FROM executions WHERE execution_id = ?",
+            (claim.execution_id,),
+        )["run_request_id"] == legal.run_request_id
+        assert store.query_one(
+            """
+            SELECT COUNT(*) FROM phase4_checkpoints
+            WHERE run_request_id = ? AND boundary = 'run_request_cancelled'
+            """,
+            (poison.run_request_id,),
+        )[0] == 1
     finally:
         store.close()
 
@@ -669,6 +988,8 @@ def test_task_deadline_failure_is_atomic_with_attempt_failure(tmp_path):
             sqlite3.IntegrityError, match="forced deadline attempt failure"
         ):
             runtime.claim_and_start_execution(
+                lease_owner_id=LEASE_OWNER_ID,
+                lease_duration_seconds=LEASE_DURATION_SECONDS,
                 now=datetime(2026, 7, 21, tzinfo=timezone.utc)
             )
         task = store.query_one(
@@ -720,7 +1041,11 @@ def test_execution_insert_failure_rolls_back_claim(tmp_path):
     )
     try:
         with pytest.raises(sqlite3.IntegrityError, match="forced execution failure"):
-            runtime.claim_and_start_execution(now=CLAIM_TIME)
+            runtime.claim_and_start_execution(
+                lease_owner_id=LEASE_OWNER_ID,
+                lease_duration_seconds=LEASE_DURATION_SECONDS,
+                now=CLAIM_TIME,
+            )
         request = store.query_one(
             "SELECT state FROM phase4_run_requests WHERE run_request_id = ?",
             (submission.run_request_id,),
@@ -742,10 +1067,14 @@ def test_repeated_claim_does_not_create_a_second_execution(tmp_path):
     )
     try:
         first = runtime.claim_and_start_execution(
+            lease_owner_id=LEASE_OWNER_ID,
+            lease_duration_seconds=LEASE_DURATION_SECONDS,
             execution_id="execution-repeat-claim",
             now=CLAIM_TIME,
         )
         second = runtime.claim_and_start_execution(
+            lease_owner_id=LEASE_OWNER_ID,
+            lease_duration_seconds=LEASE_DURATION_SECONDS,
             execution_id="execution-repeat-claim-2",
             now=CLAIM_TIME,
         )
@@ -773,6 +1102,8 @@ def test_two_connections_competing_for_claim_create_one_execution(tmp_path):
     def claim(runtime: TaskRuntime, execution_id: str):
         barrier.wait()
         return runtime.claim_and_start_execution(
+            lease_owner_id=LEASE_OWNER_ID,
+            lease_duration_seconds=LEASE_DURATION_SECONDS,
             execution_id=execution_id,
             now=CLAIM_TIME,
         )
@@ -809,6 +1140,8 @@ def test_claimed_execution_survives_restart_and_cannot_be_reclaimed(tmp_path):
         ready_at=READY_AT,
     )
     original = runtime.claim_and_start_execution(
+        lease_owner_id=LEASE_OWNER_ID,
+        lease_duration_seconds=LEASE_DURATION_SECONDS,
         execution_id="execution-claim-restart",
         now=CLAIM_TIME,
     )
@@ -821,7 +1154,9 @@ from astra.runtime import TaskRuntime
 from astra.storage import AstraStore
 
 store = AstraStore(sys.argv[1])
-result = TaskRuntime(store).claim_and_start_execution()
+result = TaskRuntime(store).claim_and_start_execution(
+    lease_owner_id='test-phase4-worker', lease_duration_seconds=30.0
+)
 print('none' if result is None else result.model_dump_json())
 store.close()
 """
@@ -883,6 +1218,8 @@ def test_record_execution_result_is_idempotent_and_immutable(tmp_path):
         ready_at=READY_AT,
     )
     claim = runtime.claim_and_start_execution(
+        lease_owner_id=LEASE_OWNER_ID,
+        lease_duration_seconds=315_360_000.0,
         execution_id="execution-result-command",
         now=CLAIM_TIME,
     )
@@ -892,16 +1229,22 @@ def test_record_execution_result_is_idempotent_and_immutable(tmp_path):
         first = runtime.record_execution_result(
             command_id="record-result-command",
             execution_id=claim.execution_id,
+            lease_owner_id=claim.lease_owner_id,
+            lease_token=claim.lease_token,
             result=result,
         )
         replay = runtime.record_execution_result(
             command_id="record-result-command",
             execution_id=claim.execution_id,
+            lease_owner_id=claim.lease_owner_id,
+            lease_token=claim.lease_token,
             result=result,
         )
         same_result_new_command = runtime.record_execution_result(
             command_id="record-result-command-retry",
             execution_id=claim.execution_id,
+            lease_owner_id=claim.lease_owner_id,
+            lease_token=claim.lease_token,
             result=result,
         )
 
@@ -924,6 +1267,8 @@ def test_record_execution_result_is_idempotent_and_immutable(tmp_path):
             runtime.record_execution_result(
                 command_id="record-result-command",
                 execution_id=claim.execution_id,
+                lease_owner_id=claim.lease_owner_id,
+                lease_token=claim.lease_token,
                 result=_execution_result(claim.execution_id, validated=False),
             )
         with pytest.raises(
@@ -932,6 +1277,8 @@ def test_record_execution_result_is_idempotent_and_immutable(tmp_path):
             runtime.record_execution_result(
                 command_id="record-result-conflict",
                 execution_id=claim.execution_id,
+                lease_owner_id=claim.lease_owner_id,
+                lease_token=claim.lease_token,
                 result=_execution_result(claim.execution_id, validated=False),
             )
         assert _count(store, "phase4_execution_results") == 1
@@ -950,6 +1297,8 @@ def test_persisted_execution_result_survives_restart(tmp_path):
         ready_at=READY_AT,
     )
     claim = runtime.claim_and_start_execution(
+        lease_owner_id=LEASE_OWNER_ID,
+        lease_duration_seconds=315_360_000.0,
         execution_id="execution-result-restart",
         now=CLAIM_TIME,
     )
@@ -958,6 +1307,8 @@ def test_persisted_execution_result_survives_restart(tmp_path):
     runtime.record_execution_result(
         command_id="record-result-restart",
         execution_id=claim.execution_id,
+        lease_owner_id=claim.lease_owner_id,
+        lease_token=claim.lease_token,
         result=expected,
     )
     store.close()

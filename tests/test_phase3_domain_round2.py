@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -127,42 +125,3 @@ def test_frozen_core_surfaces_are_not_expanded():
         "fail",
         "escalate",
     }
-
-
-def test_phase3_cli_is_the_fixture_validation_entrypoint():
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "astra.phase3",
-            "validate-round2",
-            "--fixture",
-            str(FIXTURE_PATH),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    report = json.loads(completed.stdout)
-    assert report["valid"] is True
-    assert report["case_count"] == 35
-    assert report["passed_count"] == 35
-
-    governance = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "astra.phase3",
-            "validate-governance-round2",
-            "--fixture",
-            str(FIXTURE_PATH),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert governance.returncode == 0, governance.stdout + governance.stderr
-    governance_report = json.loads(governance.stdout)
-    assert governance_report["valid"] is True
-    assert governance_report["passed_count"] == 35

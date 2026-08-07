@@ -12,6 +12,11 @@ from .storage import AstraStore
 
 
 class MockBusinessService:
+    """Controlled in-process BusinessService for explicitly injected tests."""
+
+    commerce_authority_domain = "commerce.mock"
+    support_authority_domain = "support.mock"
+
     def __init__(self, store: AstraStore) -> None:
         self.store = store
         self.store.connection.executescript(
@@ -92,15 +97,25 @@ class MockBusinessService:
         )
         return dict(row) if row else None
 
+    def list_customer_orders(self, customer_id: str) -> list[Mapping[str, Any]]:
+        rows = self.store.query_all(
+            """
+            SELECT * FROM mock_orders
+            WHERE customer_id = ? ORDER BY order_id
+            """,
+            (customer_id,),
+        )
+        return [dict(row) for row in rows]
+
     def search_policy(self, query: str) -> list[Mapping[str, Any]]:
         words = [word.lower() for word in query.split() if word.strip()]
         rows = self.store.query_all(
             "SELECT * FROM mock_policies ORDER BY policy_id"
         )
-        policies = [dict(row) for row in rows]
+        policies: list[Mapping[str, Any]] = [dict(row) for row in rows]
         if not words:
             return policies
-        matches = []
+        matches: list[Mapping[str, Any]] = []
         for policy in policies:
             haystack = f"{policy['title']} {policy['body']}".lower()
             if any(word in haystack for word in words):
@@ -163,6 +178,19 @@ class MockBusinessService:
         row = self.store.query_one(
             "SELECT * FROM mock_complaint_tickets WHERE ticket_id = ?",
             (ticket_id,),
+        )
+        return dict(row) if row else None
+
+    def find_complaint_ticket_by_idempotency_key(
+        self, idempotency_key: str
+    ) -> Mapping[str, Any] | None:
+        """Read the business authority by the adapter's stable replay key."""
+
+        row = self.store.query_one(
+            """
+            SELECT * FROM mock_complaint_tickets WHERE idempotency_key = ?
+            """,
+            (idempotency_key,),
         )
         return dict(row) if row else None
 

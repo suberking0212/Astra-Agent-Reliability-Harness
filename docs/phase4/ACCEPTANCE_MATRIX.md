@@ -1,8 +1,17 @@
 # Phase 4 Acceptance Matrix
 
+> **Documentation Governance**
+> - **Role:** Frozen Phase 4 P4.0 acceptance specification.
+> - **Authority:** A5a — Engineering Acceptance / Phase 4 P4.0.
+> - **Topic:** ACCEPTANCE.ENGINEERING.P4
+> - **Scope:** P4-A01–P4-A13 acceptance IDs, semantic assertions, crash/concurrency matrix, milestones, and required freeze artifacts.
+> - **Not Responsible For:** Creating product or runtime requirements, reporting actual pass/fail status, defining repository-wide release readiness, or remediating defects.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.PERSISTENT_TASK_RUNTIME, DESIGN.RUNTIME.DURABLE_TASK
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / P4.0 / 2026-07-20`  
 > 范围：Phase 4 首版顶层验收、测试矩阵与冻结产物  
-> 运行时契约：`docs/phase4/TASK_RUNTIME.md`
+> 运行时架构：`docs/adr/ADR-004-persistent-task-runtime.md`
 
 ## 1. 使用规则
 
@@ -129,7 +138,7 @@ Crash 测试必须使用真实 SQLite 文件、独立子进程和强制进程退
 
 | Milestone | 阻塞验收 |
 |---|---|
-| P4.0 | 三份权威文档一致；A01-A13 编号和四处唯一语义冻结。 |
+| P4.0 | Phase 4 三份规范文档职责一致并服从 `docs/AUTHORITY.md`；A01-A13 编号和四处唯一语义冻结。 |
 | M1 Persistent Runtime Core | A01、A02。 |
 | M2 Single-worker Execution | A01、A02、A13，并形成 submit→execute→governance 闭环。 |
 | M3 Interaction and Cancellation | A03、A04、A05、A06。 |

@@ -147,7 +147,7 @@ def evaluate_round2_contract_chain(
         requirement_ref = intent.approval_requirement_ref
         if requirement_ref is None:
             raise ValueError("Round 2 approved path requires an approval requirement")
-        requirement = contract.approval_requirement(requirement_ref)
+        approval_requirement = contract.approval_requirement(requirement_ref)
         resolution = ApprovalResolution(
             approval_resolution_id="approval-resolution:" + effect.effect_identity,
             approval_request_id="approval-request:" + effect.effect_identity,
@@ -158,12 +158,12 @@ def evaluate_round2_contract_chain(
             effect_request_hash=effect.effect_request_hash,
             approval_requirement_ref=ApprovalRequirementRef.parse(requirement_ref),
             approver_subject_ref="fixture-approver",
-            approver_policy_ref=requirement.approver_policy_ref,
+            approver_policy_ref=approval_requirement.approver_policy_ref,
             permission_scope="execute_effect",
             resolved_at=_FIXED_TIME,
             valid_from=_FIXED_TIME,
             expires_at=_FIXED_TIME + timedelta(days=1),
-            usage_semantics=requirement.usage_semantics,
+            usage_semantics=approval_requirement.usage_semantics,
         )
     binding = (
         verify_approval_binding(

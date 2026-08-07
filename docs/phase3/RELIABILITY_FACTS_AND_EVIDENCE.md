@@ -1,5 +1,14 @@
 # Phase 3 Reliability Facts and Evidence Contract
 
+> **Documentation Governance**
+> - **Role:** Normative evidence and record-authority specification.
+> - **Authority:** A3 — Runtime Design / Facts and Evidence.
+> - **Topic:** DESIGN.GOVERNANCE.EVIDENCE
+> - **Scope:** Authoritative records, Reliability Facts, Outbox, ExternalOperation evidence, Evidence Collection, and EvidenceSnapshot.
+> - **Not Responsible For:** Task state transitions, policy actions, evaluator-specific logic, scheduling, or general observability UX.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY, DESIGN.GOVERNANCE.LIFECYCLE, DESIGN.GOVERNANCE.EFFECT_IDENTITY
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / 2026-07-20`  
 > 目标：定义 Authoritative Record、Reliability Fact、Outbox、External Operation、Evidence Collection 和 EvidenceSnapshot 的关系，避免第二真相源。
 

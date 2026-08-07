@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import Field
 
 from ..domain import ExecutionResult
+from ..dynamic_authority import effective_contract
 from .approval import (
     ApprovalDecision,
     ApprovalRequest,
@@ -56,7 +57,7 @@ from .policy import (
     choose_policy_action,
     make_policy_decision,
 )
-from .task_contract import FrozenContractModel, SubjectRef, TaskContract
+from .task_contract import ExecutionType, FrozenContractModel, SubjectRef, TaskContract
 from .task_rules import RuleEvaluation, TaskRuleContext, TaskRuleRegistry
 
 if TYPE_CHECKING:
@@ -130,6 +131,9 @@ class GovernanceEvaluationBlocked(RuntimeError):
 
 class GovernanceStore:
     """Governance access bound to the single authoritative AstraStore."""
+
+    if TYPE_CHECKING:
+        _astra_store: AstraStore
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         raise RuntimeError(
@@ -320,7 +324,11 @@ class RuntimeGovernanceCore:
                 raise RuntimeError("Execution attempt is not active and current")
 
             result = ExecutionResult.model_validate_json(row["result_json"])
-            contract = TaskContract.model_validate_json(row["contract_json"])
+            contract = effective_contract(
+                self.store.authority_store,
+                str(row["task_id"]),
+                TaskContract.model_validate_json(row["contract_json"]),
+            )
             completion_row = connection.execute(
                 """
                 SELECT contract_json FROM phase3_completion_contracts
@@ -347,6 +355,11 @@ class RuntimeGovernanceCore:
                 if isinstance(nested_outcome, Mapping)
                 else submitted_payload
             )
+            direct_response_validated = not (
+                contract.execution_type == ExecutionType.DIRECT_RESPONSE
+            ) or result.task_outcome_validated
+            if not direct_response_validated:
+                outcome = {}
             submitted_evidence_refs = submitted_payload.get(
                 "evidence_refs",
                 (result.result_receipt or {}).get("evidence_refs", ()),
@@ -377,7 +390,7 @@ class RuntimeGovernanceCore:
             receipt = dict(result.result_receipt or {})
             receipt_id = receipt.get("receipt_id")
             receipt_hashes = self._receipt_snapshot(
-                connection, row["task_id"]
+                connection, row["task_id"], row["attempt_id"]
             )
             if receipt_id and str(receipt_id) not in receipt_hashes:
                 receipt_hashes[str(receipt_id)] = sha256_digest(receipt)
@@ -397,6 +410,21 @@ class RuntimeGovernanceCore:
             )
             approval_refs = self._approval_snapshot(
                 connection, row["task_id"]
+            )
+            denied_effect_refs = self._denied_approval_effects(
+                connection,
+                row["task_id"],
+                external_operations,
+            )
+            failed_effect_refs = {
+                operation.effect_identity: operation.effect_request_hash
+                for operation in external_operations
+                if operation.status == ExternalOperationStatus.FAILED
+            }
+            governed_failure_refs = tuple(
+                "failure:" + sha256_digest(failure)
+                for failure in result.metadata.get("governed_tool_failures", ())
+                if isinstance(failure, Mapping)
             )
             canonical_effects = self._canonical_effects(
                 connection, row["task_id"]
@@ -549,7 +577,12 @@ class RuntimeGovernanceCore:
                 ),
                 approval_required=approval_required,
                 approval_matched=approval_matched,
-                submitted_result_present=result.submitted_result is not None,
+                denied_effect_refs=denied_effect_refs,
+                failed_effect_refs=failed_effect_refs,
+                submitted_result_present=(
+                    result.submitted_result is not None
+                    and direct_response_validated
+                ),
                 runtime_counters={
                     "attempt_count": attempt_count,
                     "execution_count": execution_count,
@@ -596,14 +629,26 @@ class RuntimeGovernanceCore:
             ),
             None,
         )
+        user_input_pending = "user_input" in snapshot.pending_interaction_kinds
+        necessary_input_missing = bool(
+            user_input_pending
+            or (
+                not snapshot.submitted_result_present
+                and not snapshot.denied_effect_refs
+                and not snapshot.failed_effect_refs
+                and not governed_failure_refs
+                and not snapshot.receipt_refs
+                and not snapshot.external_operations
+            )
+        )
         action, reason_code = choose_policy_action(
-            input_complete=(
-                snapshot.submitted_result_present
-                and result.task_outcome_validated
-                and "user_input" not in snapshot.pending_interaction_kinds
-            ),
+            input_complete=not necessary_input_missing,
             approval_required=snapshot.approval_required,
             approval_matched=snapshot.approval_matched,
+            approval_denied=bool(snapshot.denied_effect_refs),
+            governed_effect_failed=bool(
+                snapshot.failed_effect_refs or governed_failure_refs
+            ) and not user_input_pending,
             external_operation_status=operation_status,
             completion_status=completion.status,
         )
@@ -815,17 +860,31 @@ class RuntimeGovernanceCore:
 
     @staticmethod
     def _receipt_snapshot(
-        connection: sqlite3.Connection, task_id: str
+        connection: sqlite3.Connection, task_id: str, attempt_id: str
     ) -> dict[str, str]:
         receipts: dict[str, str] = {}
-        for table in ("execution_receipts", "result_receipts"):
-            rows = connection.execute(
-                f"SELECT * FROM {table} WHERE task_id = ? ORDER BY receipt_id",
-                (task_id,),
-            ).fetchall()
-            for row in rows:
-                payload = dict(row)
-                receipts[str(payload["receipt_id"])] = sha256_digest(payload)
+        execution_rows = connection.execute(
+            """
+            SELECT * FROM execution_receipts
+            WHERE task_id = ? AND attempt_id = ?
+            ORDER BY receipt_id
+            """,
+            (task_id, attempt_id),
+        ).fetchall()
+        result_rows = connection.execute(
+            """
+            SELECT receipt.*
+            FROM result_receipts AS receipt
+            JOIN executions AS execution
+              ON execution.execution_id = receipt.execution_id
+            WHERE receipt.task_id = ? AND execution.attempt_id = ?
+            ORDER BY receipt.receipt_id
+            """,
+            (task_id, attempt_id),
+        ).fetchall()
+        for row in (*execution_rows, *result_rows):
+            payload = dict(row)
+            receipts[str(payload["receipt_id"])] = sha256_digest(payload)
         return receipts
 
     @staticmethod
@@ -943,6 +1002,59 @@ class RuntimeGovernanceCore:
         for row in resolutions:
             refs[str(row["approval_resolution_id"])] = sha256_digest(dict(row))
         return refs
+
+    @staticmethod
+    def _denied_approval_effects(
+        connection: sqlite3.Connection,
+        task_id: str,
+        external_operations: tuple[ExternalOperation, ...],
+    ) -> dict[str, str]:
+        rows = connection.execute(
+            """
+            SELECT resolution.effect_identity,
+                   resolution.effect_request_hash,
+                   resolution.resolution_json,
+                   request.request_json
+            FROM phase3_approval_resolutions AS resolution
+            JOIN phase3_approval_requests AS request
+              ON request.approval_request_id = resolution.approval_request_id
+             AND request.interaction_id = resolution.interaction_id
+             AND request.task_id = resolution.task_id
+            WHERE resolution.task_id = ?
+              AND resolution.decision = 'denied'
+              AND request.status = 'resolved'
+            ORDER BY resolution.approval_resolution_id
+            """,
+            (task_id,),
+        ).fetchall()
+        executed_effects = {
+            operation.effect_identity: operation.effect_request_hash
+            for operation in external_operations
+        }
+        denied: dict[str, str] = {}
+        for row in rows:
+            resolution = ApprovalResolution.model_validate_json(
+                row["resolution_json"]
+            )
+            request = ApprovalRequest.model_validate_json(row["request_json"])
+            if (
+                resolution.decision == ApprovalDecision.DENIED
+                and resolution.effect_identity == row["effect_identity"]
+                and resolution.effect_request_hash == row["effect_request_hash"]
+                and request.approval_request_id
+                == resolution.approval_request_id
+                and request.interaction_id == resolution.interaction_id
+                and request.effect_identity == resolution.effect_identity
+                and request.effect_request_hash
+                == resolution.effect_request_hash
+                and request.task_contract_ref
+                == resolution.task_contract_ref
+                and request.approval_requirement_ref
+                == resolution.approval_requirement_ref
+                and executed_effects.get(resolution.effect_identity) is None
+            ):
+                denied[resolution.effect_identity] = resolution.effect_request_hash
+        return denied
 
     @staticmethod
     def _completion_snapshot(
@@ -1187,7 +1299,11 @@ class RuntimeGovernanceCore:
                 or task["run_request_state"] != "claimed"
             ):
                 raise PermissionError("execution_not_active")
-            contract = TaskContract.model_validate_json(task["contract_json"])
+            contract = effective_contract(
+                self.store.authority_store,
+                task_id,
+                TaskContract.model_validate_json(task["contract_json"]),
+            )
             if effect.task_contract_ref != contract.ref:
                 raise PermissionError("effect_stale_contract")
             connection.execute(
@@ -1460,8 +1576,10 @@ class RuntimeGovernanceCore:
                     canonical = CanonicalEffectRequest.model_validate_json(
                         canonical_row["request_json"]
                     )
-                    contract = TaskContract.model_validate_json(
-                        task_row["contract_json"]
+                    contract = effective_contract(
+                        self.store.authority_store,
+                        task_id,
+                        TaskContract.model_validate_json(task_row["contract_json"]),
                     )
                     intent = contract.effect_intent(canonical.effect_intent_ref)
                     confirmed_for_intent = 0
@@ -1598,7 +1716,7 @@ class RuntimeGovernanceCore:
                 effect_identity=operation.effect_identity,
                 effect_request_hash=operation.effect_request_hash,
                 external_object_id=external_object_id,
-                state=dict(state),
+                payload=dict(state),
             )
             existing = connection.execute(
                 """

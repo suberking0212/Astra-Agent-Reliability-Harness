@@ -1,0 +1,4 @@
+2026-07-29 12:34:28,477 WARNING [native-session:evaluation:native_full:process_crash:single:1] hermes_cli.plugins: Hook 'post_api_request' callback _post_api_request raised: 'NativeBridgeContext' object has no attribute 'decision_count'
+2026-07-29 12:34:28,506 WARNING [native-session:evaluation:native_full:process_crash:single:1] hermes_cli.plugins: Hook 'post_api_request' callback _post_api_request raised: 'NativeBridgeContext' object has no attribute 'decision_count'
+2026-07-29 12:34:28,542 WARNING [native-session:evaluation:native_full:process_crash:single:1] hermes_cli.plugins: Hook 'post_api_request' callback _post_api_request raised: 'NativeBridgeContext' object has no attribute 'decision_count'
+2026-07-29 12:34:28,596 WARNING [native-session:evaluation:native_full:process_crash:single:1] hermes_cli.plugins: Hook 'post_api_request' callback _post_api_request raised: 'NativeBridgeContext' object has no attribute 'decision_count'

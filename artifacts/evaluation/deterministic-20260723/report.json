@@ -1,0 +1,96 @@
+{
+  "claim_limit": "Metrics describe observed runs only. Scripted-provider results validate deterministic harness behavior, not Agent autonomy or live-model behavior; scripted-provider runs do not prove learning; native_full is a non-Astra baseline; its waiting-input case verifies same-session Hermes history continuation, not Astra Runtime recovery; its process restart remains unverified as recovery; process-recovery acceptance requires actual OS process termination rather than an injected exception. Comparative superiority requires comparable live-provider data.",
+  "paired_learning": [
+    {
+      "error_tool_call_delta": 0,
+      "latency_delta_seconds": -0.015847000000000833,
+      "learning_artifact_count": 0,
+      "profile": "astra_controlled",
+      "repetition": 1,
+      "skill_reused": false,
+      "task_b_false_success_delta": 0,
+      "task_b_true_success_delta": 0,
+      "token_delta": 0,
+      "tool_call_delta": 0,
+      "unsafe_transfer": false
+    },
+    {
+      "error_tool_call_delta": 0,
+      "latency_delta_seconds": 2.0753410000000017,
+      "learning_artifact_count": 0,
+      "profile": "astra_full_hermes",
+      "repetition": 1,
+      "skill_reused": false,
+      "task_b_false_success_delta": 0,
+      "task_b_true_success_delta": 0,
+      "token_delta": 0,
+      "tool_call_delta": 0,
+      "unsafe_transfer": false
+    },
+    {
+      "error_tool_call_delta": 0,
+      "latency_delta_seconds": 7.580494000000002,
+      "learning_artifact_count": 0,
+      "profile": "native_full",
+      "repetition": 1,
+      "skill_reused": false,
+      "task_b_false_success_delta": 0,
+      "task_b_true_success_delta": 0,
+      "token_delta": 0,
+      "tool_call_delta": 0,
+      "unsafe_transfer": false
+    }
+  ],
+  "profiles": {
+    "astra_controlled": {
+      "duplicate_side_effect_rate": 0.0,
+      "false_success_rate": 0.09090909090909091,
+      "human_intervention_count": 6,
+      "interruption_recovery_rate": 1.0,
+      "mean_latency_seconds": 37.44352845454546,
+      "mean_tokens": 87.27272727272727,
+      "median_latency_seconds": 25.36479,
+      "median_tokens": 90.0,
+      "provider_call_count": 65,
+      "tool_call_count": 40,
+      "trials": 11,
+      "true_success_rate": 0.8181818181818182,
+      "unauthorized_side_effect_rate": 0.0,
+      "unresolved_rate": 0.0
+    },
+    "astra_full_hermes": {
+      "duplicate_side_effect_rate": 0.0,
+      "false_success_rate": 0.09090909090909091,
+      "human_intervention_count": 6,
+      "interruption_recovery_rate": 1.0,
+      "mean_latency_seconds": 38.178999272727275,
+      "mean_tokens": 87.27272727272727,
+      "median_latency_seconds": 26.995976,
+      "median_tokens": 90.0,
+      "provider_call_count": 65,
+      "tool_call_count": 40,
+      "trials": 11,
+      "true_success_rate": 0.8181818181818182,
+      "unauthorized_side_effect_rate": 0.0,
+      "unresolved_rate": 0.0
+    },
+    "native_full": {
+      "duplicate_side_effect_rate": 0.0,
+      "false_success_rate": 0.2727272727272727,
+      "human_intervention_count": 3,
+      "interruption_recovery_rate": null,
+      "mean_latency_seconds": 33.27615681818182,
+      "mean_tokens": 79.0909090909091,
+      "median_latency_seconds": 26.138565,
+      "median_tokens": 90.0,
+      "provider_call_count": 63,
+      "tool_call_count": 37,
+      "trials": 11,
+      "true_success_rate": 0.7272727272727273,
+      "unauthorized_side_effect_rate": 0.09090909090909091,
+      "unresolved_rate": 0.09090909090909091
+    }
+  },
+  "report_schema_version": "1",
+  "trial_count": 33
+}

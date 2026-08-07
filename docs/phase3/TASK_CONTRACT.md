@@ -1,5 +1,14 @@
 # Phase 3 Task Contract
 
+> **Documentation Governance**
+> - **Role:** Normative Task Contract specification.
+> - **Authority:** A3 — Runtime Design / Task Contract.
+> - **Topic:** DESIGN.GOVERNANCE.TASK_CONTRACT
+> - **Scope:** Versioned task objective, subjects, capabilities, constraints, authorized effects, approvals, completion references, and limits.
+> - **Not Responsible For:** Execution plans, tool order, lifecycle transitions, effect normalization details, or current implementation status.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, ARCH.HERMES_ASTRA_BOUNDARY
+> - **Status:** FROZEN
+
 > 状态：`FROZEN / 2026-07-20`  
 > 目标：定义 Phase 3 中可版本化、可强制、可重放的任务治理根契约。Task Contract 描述允许完成什么、对哪些对象生效、允许使用哪些能力、哪些副作用被授权以及如何验收，但不描述执行步骤或工具顺序。
 

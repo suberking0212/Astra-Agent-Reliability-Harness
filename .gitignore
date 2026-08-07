@@ -1,10 +1,15 @@
 .DS_Store
-.hermes/
+.hermes/*
+!.hermes/plugins/
+!.hermes/plugins/astra-runtime/
+!.hermes/plugins/astra-runtime/plugin.yaml
+!.hermes/plugins/astra-runtime/__init__.py
+!.hermes/astra-runtime-config.yaml
 .pytest_cache/
 .ruff_cache/
+var/
 **/__pycache__/
 *.py[cod]
 
 # Upstream Hermes source is an external reference snapshot, not Astra source.
 hermes-agent-main/
-

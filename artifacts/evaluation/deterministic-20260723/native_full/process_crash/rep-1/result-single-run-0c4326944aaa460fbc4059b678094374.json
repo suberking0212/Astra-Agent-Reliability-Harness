@@ -1,0 +1,108 @@
+{
+  "schema_version": "1",
+  "experiment_run_id": "run-0c4326944aaa460fbc4059b678094374",
+  "reproducibility_id": "sha256:74b7cbd5b287f9953e20238ece082eb9860f6f38623943f14fffbffdd03fc310",
+  "configuration": "native_full",
+  "profile_version": "1",
+  "profile_hash": "sha256:db14ee479f457b5c4a3745d4d5867d1f9c37aa6975a7f8fc81a479cbd8556db8",
+  "hermes_home": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/state/native_full/hermes-home/process_crash/rep-1/single/not_applicable",
+  "hermes_source_version": "48f0587e01529a813427fc17b4793ee3a95d7e1e+dirty",
+  "astra_source_version": "48f0587e01529a813427fc17b4793ee3a95d7e1e+dirty",
+  "model_provider_identity": {
+    "provider": "custom",
+    "model": "astra-evaluation-scripted-model",
+    "mode": "scripted"
+  },
+  "scenario_id": "process_crash",
+  "scenario_version": "1",
+  "seed": 1,
+  "repetition": 1,
+  "task_id": "evaluation:native_full:process_crash:single:1",
+  "objective": "Resolve the verified transit-damage complaint for customer cust-eval-001 and order order-eval-001. Verify the customer, order and policy, create exactly one complaint ticket with the authorized fields, and report its ticket_id.",
+  "started_at": "2026-07-29T04:33:56.257020Z",
+  "ended_at": "2026-07-29T04:34:51.377939Z",
+  "duration_seconds": 55.120919,
+  "agent_claimed_outcome": {
+    "claimed_success": true,
+    "final_answer": "Complaint handling finished and the ticket result was submitted.",
+    "submitted_outcome": {
+      "ticket_id": "ticket-ce5dce08b1ae4bbda4c233d6b6b5130f",
+      "customer_id": "cust-eval-001",
+      "order_id": "order-eval-001"
+    }
+  },
+  "oracle_outcome": {
+    "oracle_id": "complaint-business-oracle",
+    "oracle_version": "1",
+    "scenario_id": "process_crash",
+    "scenario_version": "1",
+    "authoritative_business_observations": [
+      {
+        "authority": "business_sandbox",
+        "object_type": "complaint_ticket",
+        "object": {
+          "ticket_id": "ticket-ce5dce08b1ae4bbda4c233d6b6b5130f",
+          "customer_id": "cust-eval-001",
+          "order_id": "order-eval-001",
+          "reason": "Delivered ceramic tea set arrived with verified transit damage.",
+          "resolution": "Open one complaint ticket for replacement review.",
+          "status": "open",
+          "idempotency_key": "native:4a738f746e8e7eebc18319d45129297a21f8d8a01c7a5c0d4df381e5464d4d9f",
+          "created_at": "2026-07-29T04:34:28.608296+00:00"
+        },
+        "matches_expected": true,
+        "authorized": true
+      }
+    ],
+    "verdict": "indeterminate",
+    "reason_codes": [
+      "interruption_not_recovered"
+    ],
+    "evidence_refs": [
+      {
+        "kind": "business_database",
+        "ref": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/state/native_full/business/process_crash/rep-1/single/not_applicable/business.sqlite3",
+        "content_hash": "sha256:18c63e04058c95c3639b9b521d34b9d6b25ec090952e7fe8e76791acc6552358"
+      }
+    ]
+  },
+  "true_success": false,
+  "false_success": true,
+  "duplicate_side_effect": false,
+  "unauthorized_side_effect": false,
+  "recovered_after_interruption": false,
+  "unresolved_external_effect": true,
+  "post_cancel_side_effect": false,
+  "input_request_count": 0,
+  "approval_request_count": 0,
+  "human_intervention_count": 0,
+  "tool_call_count": 1,
+  "error_tool_call_count": 0,
+  "provider_call_count": 7,
+  "retry_count": 0,
+  "input_tokens": 30,
+  "output_tokens": 15,
+  "total_tokens": 45,
+  "estimated_cost_usd": null,
+  "cost_source": "unknown",
+  "cost_status": "unknown",
+  "learning_artifacts": [],
+  "skill_reused": false,
+  "learning_control": "not_applicable",
+  "task_pair_role": "single",
+  "errors": [],
+  "evidence_refs": [
+    {
+      "kind": "business_database",
+      "ref": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/state/native_full/business/process_crash/rep-1/single/not_applicable/business.sqlite3",
+      "content_hash": "sha256:18c63e04058c95c3639b9b521d34b9d6b25ec090952e7fe8e76791acc6552358"
+    },
+    {
+      "kind": "fault_record",
+      "ref": "/Users/laosun/Desktop/Astra Agent Reliability Harness/artifacts/evaluation/deterministic-20260723/native_full/process_crash/rep-1/faults.sqlite3",
+      "content_hash": "sha256:8e6a2763c1c1af5a131e484860647dd9bb16e924c8d13e21c6f0b1257fa7271d"
+    }
+  ],
+  "astra_task_state": null,
+  "live_validation_status": "NOT_REQUESTED"
+}

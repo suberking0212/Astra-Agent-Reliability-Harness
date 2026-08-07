@@ -1,0 +1,43 @@
+{
+  "contract_id": "completion-s12-s13-local-sandbox-complaint",
+  "contract_version": "1",
+  "task_type": "complaint_resolution",
+  "requirements": [
+    {
+      "requirement_id": "local-sandbox-complaint-confirmed",
+      "description": "Exactly one authorized complaint effect is confirmed by the business sandbox.",
+      "required": true,
+      "evaluator": {
+        "evaluator_id": "astra.authorized_effect_confirmed",
+        "evaluator_version": "1"
+      },
+      "configuration": {
+        "effect_intent_ref": "create-local-sandbox-complaint-once",
+        "authority_domain": "support.local-sandbox",
+        "effect_type": "support.complaint_ticket",
+        "effect_type_version": "1",
+        "subject_ref": {
+          "authority_domain": "commerce.local-sandbox",
+          "type": "order",
+          "id": "order-s12-s13-001"
+        },
+        "normalized_parameters": {
+          "customer_id": "cust-s12-s13-001",
+          "order_id": "order-s12-s13-001",
+          "reason": "Delivered ceramic tea set arrived with verified transit damage.",
+          "resolution": "Open one complaint ticket for replacement review."
+        },
+        "expected_observation": {
+          "status": "open"
+        },
+        "approval_required": false
+      },
+      "required_evidence": [
+        "external_operation",
+        "business_state",
+        "canonical_effect"
+      ]
+    }
+  ],
+  "aggregation_policy": "all_required"
+}

@@ -1,7 +1,16 @@
 # ADR-003: Hermes 与 Astra 的 Task Reliability 职责边界
 
-> 状态：`ACCEPTED / PHASE 3 DESIGN FROZEN`  
-> 日期：2026-07-20  
+> **Documentation Governance**
+> - **Role:** Accepted architecture decision for the Hermes/Astra reliability boundary.
+> - **Authority:** A2 — Architecture / ADR.
+> - **Topic:** ARCH.HERMES_ASTRA_BOUNDARY
+> - **Scope:** Ownership of Agent execution reliability, Task truth, governance boundaries, and allowed defensive overlap.
+> - **Not Responsible For:** Detailed field schemas, durable scheduling mechanics, implementation status, remediation, or acceptance results.
+> - **Depends On:** GOVERNANCE.DOCUMENTATION, PRODUCT.CORE
+> - **Status:** FROZEN
+
+> 决策：`ACCEPTED / PHASE 3 DESIGN FROZEN`
+> 日期：2026-07-20
 > 适用范围：Phase 3 及后续 Task Reliability and Governance 设计
 
 ## Context
@@ -17,6 +26,13 @@ Phase 3 必须转向独立且稳定的任务级价值：持久化任务事实、
 中文规范：
 
 > **Hermes 负责单次 Agent 执行内部的推理、工具选择、错误适应、局部重试与循环保护；Astra 负责持久化任务事实、生命周期权威、外部副作用责任、契约验收以及跨 turn、attempt 和重启的治理。**
+
+## Controlled extension
+
+The narrower Learning Artifact integration boundary is defined by
+[`ADR-005`](ADR-005-hermes-learning-artifact-integration.md).  ADR-005 depends
+on this decision and does not transfer Hermes-owned Memory, Skill, Curator, or
+Learning behavior to Astra.
 
 ## 执行边界摘要
 
@@ -45,7 +61,7 @@ Hermes 只负责 Agent-loop-level progress。Astra 负责 Task-level progress ac
 
 ```text
 Astra RuntimeInvocation
-→ HermesExecutor
+→ Hermes public plugin interface
 → Hermes Agent Loop
 → Astra Bridge Plugin
 → Astra Tool Gateway
@@ -104,6 +120,11 @@ persist result submission
 - 最终自然语言回答组织。
 
 Astra 不实现 `retry_same_tool`、`repair_arguments`、`choose_alternative_tool`、固定工具顺序或业务计划。
+
+Astra 也不调度、配置或调用 Hermes 的 Curator、Memory、Skill 或其维护生命周期，
+不实现 Provider/credential 产品层，也不得通过 monkey-patch 或其他私有 Hermes
+runtime 接口改变这些能力。Astra 可为隔离和评测创建独立 `HERMES_HOME`，并通过
+公开集成边界记录观察；这不转移 Hermes 的行为、记忆、学习或维护所有权。
 
 ### Astra owns
 
