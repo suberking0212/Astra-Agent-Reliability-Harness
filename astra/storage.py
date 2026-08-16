@@ -16,7 +16,7 @@ from uuid import uuid4
 from .domain import InteractionKind, InteractionRequest, ResultReceipt
 
 
-CURRENT_SCHEMA_VERSION = 18
+CURRENT_SCHEMA_VERSION = 19
 
 
 def _now() -> str:
@@ -276,6 +276,13 @@ class AstraStore:
                 self._migrate_v17_to_v18(connection)
                 connection.execute(
                     "UPDATE astra_schema SET version = 18, updated_at = ? WHERE singleton = 1",
+                    (_now(),),
+                )
+                version = 18
+            if version == 18:
+                self._migrate_v18_to_v19(connection)
+                connection.execute(
+                    "UPDATE astra_schema SET version = 19, updated_at = ? WHERE singleton = 1",
                     (_now(),),
                 )
             self._validate_schema(connection)
@@ -1047,6 +1054,31 @@ class AstraStore:
                 evidence_hash TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 UNIQUE(candidate_ref, execution_id)
+            )
+            """
+        )
+
+    @staticmethod
+    def _migrate_v18_to_v19(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS artifact_action_observations (
+                event_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                hermes_task_id TEXT NOT NULL,
+                tool_call_id TEXT NOT NULL UNIQUE,
+                turn_id TEXT NOT NULL,
+                api_request_id TEXT NOT NULL,
+                task_id TEXT,
+                attempt_id TEXT,
+                execution_id TEXT,
+                artifact_type TEXT NOT NULL,
+                artifact_ref TEXT,
+                action TEXT NOT NULL,
+                status TEXT NOT NULL,
+                metadata_json TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                correlation_status TEXT NOT NULL
             )
             """
         )

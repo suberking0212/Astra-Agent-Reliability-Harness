@@ -10,12 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .budget import BudgetLedger
-from .business import (
-    BusinessSandboxConfig,
-    BusinessService,
-    HttpBusinessSandboxAdapter,
-)
-from .complaint_extension import build_complaint_extension
+from .business import BusinessService
 from .domain_extension import DomainExtension
 from .domain import AgentExecutor, ExecutionEventSink
 from .execution_profiles import get_execution_profile
@@ -64,11 +59,15 @@ class ProductionConfig:
     """Configuration for one long-lived Astra production process."""
 
     database_path: str | Path
-    business_sandbox_config: BusinessSandboxConfig | None = None
+    # Domain adapters and extensions are injected by the composition root.
+    # The Runtime core deliberately has no default business domain.
     worker_poll_interval: float = 0.25
     lease_duration_seconds: float = 30.0
     heartbeat_interval_seconds: float = 10.0
-    execution_profile: str = "astra_controlled"
+    # Product launches expose native Hermes capabilities while Runtime keeps
+    # authority isolation.  The restrictive Stage 1 surface remains opt-in as
+    # ``astra_controlled_debug``.
+    execution_profile: str = "astra_full_hermes"
     hermes_home: str | Path | None = None
 
     def __post_init__(self) -> None:
@@ -136,9 +135,7 @@ class ProductionRuntime:
         self.config = config
         self.execution_profile = get_execution_profile(config.execution_profile)
         if (
-            business_factory is None
-            and config.business_sandbox_config is None
-            and domain_extensions is None
+            business_factory is None and domain_extensions is None
         ):
             raise ValueError(
                 "business sandbox configuration is required; "
@@ -168,16 +165,11 @@ class ProductionRuntime:
             self.governance = self.runtime.governance_core
             if business_factory is not None:
                 self.business = business_factory(self.store)
-            elif config.business_sandbox_config is not None:
-                sandbox_config = config.business_sandbox_config
-                self.business = HttpBusinessSandboxAdapter(sandbox_config)
             else:
                 self.business = None
             extensions = tuple(domain_extensions or ())
             if not extensions:
-                if self.business is None:
-                    raise ValueError("at least one domain extension is required")
-                extensions = (build_complaint_extension(self.business),)
+                raise ValueError("at least one domain extension is required")
             tool_definitions = {}
             for extension in extensions:
                 for normalizer in extension.normalizers:

@@ -27,7 +27,6 @@ from astra.phase3.completion import (
 from astra.phase3.task_contract import TaskContract
 from astra.runtime import (
     CommandIdentityConflict,
-    ExecutionEligibilityError,
     ExecutionResultConflict,
     TaskRuntime,
 )

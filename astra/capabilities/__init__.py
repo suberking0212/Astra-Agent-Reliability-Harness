@@ -1,0 +1,1 @@
+"""Optional product capability definitions."""

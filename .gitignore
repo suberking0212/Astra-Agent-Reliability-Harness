@@ -5,6 +5,8 @@
 !.hermes/plugins/astra-runtime/plugin.yaml
 !.hermes/plugins/astra-runtime/__init__.py
 !.hermes/astra-runtime-config.yaml
+!.hermes/astra-business-sandbox/
+!.hermes/astra-business-sandbox/SKILL.md
 .pytest_cache/
 .ruff_cache/
 var/
