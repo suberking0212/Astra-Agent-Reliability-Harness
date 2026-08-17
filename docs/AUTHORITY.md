@@ -61,7 +61,7 @@ The following rules are mandatory for every current and future document:
 7. Historical, Informational, Reference, Guide, generated, and upstream
    documents are explanation only. They must not define implementation behavior
    or be used as implementation authority.
-8. `docs/PHASE_STATUS.md` reports implementation claims only. It never changes
+8. `docs/STATUS.md` reports implementation claims only. It never changes
    a requirement, design, remediation finding, or acceptance criterion.
 
 The former phase-based priority statement in the root remediation plan is
@@ -77,7 +77,7 @@ normative owner. “Supporting context” is deliberately non-normative.
 | Topic ID | Topic | Single authoritative source | Supporting context |
 |---|---|---|
 | GOVERNANCE.DOCUMENTATION | Documentation Governance | `docs/AUTHORITY.md` | None |
-| PRODUCT.CORE | Product context, goals, scope, requirements, and success standards | `docs/PRD.md` | `README.md`, `docs/PHASE_STATUS.md`, `docs/history/development_updated.md` |
+| PRODUCT.CORE | Product context, goals, scope, requirements, and success standards | `docs/PRD.md` | `README.md`, `docs/STATUS.md`, `docs/history/development_updated.md` |
 | ARCH.HERMES_ASTRA_BOUNDARY | Hermes/Astra reliability ownership boundary | `docs/adr/ADR-003-task-reliability-boundary.md` | `docs/history/HERMES_ARCHITECTURE_ANALYSIS.md` |
 | ARCH.HERMES_ASTRA_LEARNING_INTEGRATION | Hermes/Astra Learning Artifact integration boundary | `docs/adr/ADR-005-hermes-learning-artifact-integration.md` | ADR-003, `docs/design/HERMES_SELF_IMPROVING_LOOP.md` |
 | ARCH.PERSISTENT_TASK_RUNTIME | Persistent Task Runtime architecture decision | `docs/adr/ADR-004-persistent-task-runtime.md` | Phase 3 contracts |
@@ -206,11 +206,15 @@ consistent with the Topic Registry.
 | Document or path | Role | Status / restriction |
 |---|---|---|
 | `README.md` | Repository landing page | CURRENT; navigation and summary only |
-| `docs/PHASE_STATUS.md` | Current implementation status register | CURRENT; non-normative |
+| `docs/STATUS.md` | Current implementation status register | CURRENT; the sole current implementation-status source of truth; non-normative |
+| `docs/history/PHASE_STATUS.md` | Former implementation-status register | HISTORICAL REFERENCE; superseded by `docs/STATUS.md` |
 | `docs/history/HERMES_ARCHITECTURE_ANALYSIS.md` | Version-scoped research record | HISTORICAL REFERENCE; Hermes 0.18.2 facts only |
 | `docs/history/development_updated.md` | Former combined product/design planning source | HISTORICAL REFERENCE; superseded by `docs/PRD.md` |
 | `docs/history/EXECUTION_TYPE_RUNTIME_IMPLEMENTATION_PLAN.md` | Execution-type implementation plan | HISTORICAL REFERENCE; superseded by current CLI and Runtime Design |
 | `docs/history/PRODUCT_EVOLUTION_ROADMAP.md` | Future-stage hypotheses | HISTORICAL REFERENCE; does not authorize implementation |
+| `docs/history/STAGE_1_GOVERNED_BUSINESS_EXECUTION_CLOSURE.md` | Legacy Runtime-tool protocol record | HISTORICAL REFERENCE; superseded by the current semantic surface |
+| `docs/history/STAGE_2B0_COMMAND_SPIKE.md` | Command public-interface feasibility record | HISTORICAL REFERENCE; not current implementation status |
+| `docs/history/HERMES_0.20.0_MIGRATION_ASSESSMENT.md` | Point-in-time Hermes migration investigation | HISTORICAL REFERENCE; not current migration status |
 | `docs/深入理解-AI-Agent-李博杰-v1.txt` | External background source | REFERENCE ONLY; not Astra authority |
 | `hermes-agent-main/**` | Vendored upstream source and documentation | UPSTREAM REFERENCE; governed by Hermes, not Astra |
 | `.pytest_cache/**` and generated outputs | Tool-generated material | GENERATED; never documentation authority |

@@ -1,5 +1,9 @@
 # Hermes 0.20.0 最小迁移评估（阻塞记录）
 
+> **Historical notice:** This preserves the original version investigation and
+> its point-in-time evidence. For the current migration status, see
+> [docs/STATUS.md](../STATUS.md). It is not current implementation authority.
+
 评估日期：2026-08-07  
 隔离分支：`codex/hermes-0.20.0-migration`
 

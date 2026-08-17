@@ -1,5 +1,9 @@
 # Stage 2B-0: Hermes public command API spike
 
+> **Historical notice:** This feasibility investigation retains its original
+> result. Current implementation status is in [docs/STATUS.md](../STATUS.md);
+> this document is not current implementation authority.
+
 Status: PASS for session binding and fail-closed behavior; NO-GO for implicit agent resume.
 
 ## Verified

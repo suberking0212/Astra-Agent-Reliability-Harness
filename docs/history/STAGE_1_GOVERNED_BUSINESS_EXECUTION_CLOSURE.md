@@ -1,5 +1,10 @@
 # Stage 1 Governed Business Execution Closure
 
+> **Historical notice:** This preserves the original Stage 1 Runtime-tool
+> protocol record. The current model-visible surface is defined in
+> [docs/STATUS.md](../STATUS.md); this document is not current implementation
+> authority.
+
 ## Boundary
 
 `Hermes Agent -> Astra Business Protocol -> Astra Runtime service -> Task /
