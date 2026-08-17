@@ -1,5 +1,5 @@
 name: astra-runtime
 version: 1.0.0
-description: Astra Runtime, Governance, Tool Gateway, and Business Sandbox adapter for Hermes.
+description: Astra semantic governed capabilities for authoritative external facts and actions in Hermes.
 provides_tools:
-  - astra_runtime_status
+  - astra_get_latest_customer_order

@@ -26,6 +26,9 @@ class CatalogTool:
     schema: Mapping[str, Any]
     tool_version: str = "1"
     execution_profiles: tuple[str, ...] = ("business-task",)
+    governed: bool = True
+    authoritative_source: str = "astra_runtime.tool_result_receipt_evidence"
+    failure_policy: str = "fail_closed_runtime_only"
 
     @property
     def schema_hash(self) -> str:
@@ -94,12 +97,21 @@ def unregister_catalog_tool(tool_name: str) -> None:
     TOOL_DISPLAY_NAMES.pop(tool_name, None)
 
 
-def tool_schema(tool_name: str) -> Mapping[str, Any]: return TOOL_CATALOG[tool_name].schema
+def tool_schema(tool_name: str) -> Mapping[str, Any]:
+    return TOOL_CATALOG[tool_name].schema
+
+
 def tool_schema_hash(tool_name: str, *, tool_version: str = "1") -> str:
     tool = TOOL_CATALOG[tool_name]
-    if tool_version != tool.tool_version: raise KeyError(f"{tool_name}@{tool_version}")
+    if tool_version != tool.tool_version:
+        raise KeyError(f"{tool_name}@{tool_version}")
     return tool.schema_hash
-def resolved_tools(names: Iterable[str]) -> tuple[ResolvedTool, ...]: return tuple(TOOL_CATALOG[name].binding() for name in names)
+
+
+def resolved_tools(names: Iterable[str]) -> tuple[ResolvedTool, ...]:
+    return tuple(TOOL_CATALOG[name].binding() for name in names)
+
+
 def tools_for_profile(profile: str) -> tuple[str, ...]:
     """Return capabilities, never a pre-composed workflow or ordered plan."""
     return tuple(

@@ -1,43 +1,42 @@
 # Astra Agent Reliability Harness
 
-Hermes is the only CLI and conversation loop in this repository. Astra is a
-Runtime and governance service, loaded into Hermes through the documented
-project-plugin API.
+Astra supplies governed Task Runtime, evidence, and business-capability
+boundaries around a Hermes Agent CLI. Hermes remains the conversation loop and
+agent runtime; Astra does not create a second CLI or agent loop.
 
-```text
-Hermes CLI
-  ↓
-Thin Astra project plugin
-  ↓
-Production Runtime → Governance → Tool Gateway → Business Sandbox
-```
-
-Start Hermes with the Astra plugin and local Business Sandbox:
+## Start
 
 ```bash
 ./scripts/start_astra_cli.sh
 ```
 
-The script starts no Astra CLI; it replaces itself with the configured native
-`hermes` executable. The adapter registers the public
-`astra_runtime_status` tool, which returns a localized Runtime state.
+The launcher starts the local Business Sandbox and Astra Runtime service, then
+executes the configured native Hermes CLI. It uses the workspace Hermes binary
+when available; set `HERMES_BIN` to select another executable.
 
-## Public-interface boundary
+## Current Model Surface
 
-The adapter uses only Hermes' documented project-plugin contract:
+The current model-visible Astra surface contains one semantic capability:
 
-- project plugin discovery (`HERMES_ENABLE_PROJECT_PLUGINS=true`);
-- `PluginContext.register_command`;
-- `PluginContext.register_tool`.
+```text
+astra_get_latest_customer_order(customer_id)
+```
 
-No Hermes source is modified, copied, imported as an implementation detail, or
-monkey-patched.
+It returns an authoritative business result with receipt/evidence references.
+Task, execution, lease, fencing, transport-authentication, approval, and
+Gateway mechanics are not model-visible.
 
-Hermes 0.18.2 does not expose a public API to bind an Astra Task to the active
-CLI session, inject per-task Runtime context, resume an execution in that
-session, or map `waiting_input` / `waiting_approval` to its interactive loop.
-Consequently automatic Task execution, interactive approval/input handoff,
-`/task`, and `/resume` are intentionally unavailable. Hermes also reserves its
-native `/status` and `/cancel` names, so Astra does not override them. The
-Runtime fails closed rather than creating a second loop or relying on Hermes
-internals.
+## Limits
+
+- Hermes integration is currently pinned to 0.18.2.
+- There is no public Hermes Task-to-session execution API, native pause/resume
+  handoff, or approval UI callback.
+- Local scripted-provider tests are not live-provider or learning-effectiveness
+  evidence.
+
+## Documentation
+
+[Current implementation status](docs/STATUS.md) is the sole current status
+source. Frozen ownership and Runtime contracts are indexed by
+[Documentation Authority](docs/AUTHORITY.md). Historical protocols, phase
+plans, and version investigations are retained under [docs/history](docs/history/).

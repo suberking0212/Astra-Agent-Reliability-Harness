@@ -484,7 +484,7 @@ It does not copy Architecture, Design, or Acceptance content.
 - Adding Workflow, Browser, Provider Framework, multi-node Runtime, or another
   new product domain requires an explicit `PRODUCT.CORE` change before creating
   downstream Architecture or Design authority.
-- Current implementation status belongs to `docs/PHASE_STATUS.md`, not this PRD.
+- Current implementation status belongs to `docs/STATUS.md`, not this PRD.
 - Engineering and release decisions must cite Requirement IDs and the applicable
   Topic Authorities rather than reproducing requirement text.
 

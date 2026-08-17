@@ -14,6 +14,7 @@ from uuid import uuid4
 from .domain import (
     AgentExecutor,
     ExecutionEvent,
+    ExecutionEventSink,
     ExecutionResult,
     InteractionKind,
     InteractionPurpose,

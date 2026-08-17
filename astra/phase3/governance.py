@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any
 from pydantic import Field
 
 from ..domain import ExecutionResult
-from ..dynamic_authority import effective_contract
 from .approval import (
     ApprovalDecision,
     ApprovalRequest,
@@ -324,6 +323,7 @@ class RuntimeGovernanceCore:
                 raise RuntimeError("Execution attempt is not active and current")
 
             result = ExecutionResult.model_validate_json(row["result_json"])
+            from ..dynamic_authority import effective_contract
             contract = effective_contract(
                 self.store.authority_store,
                 str(row["task_id"]),
@@ -1299,6 +1299,7 @@ class RuntimeGovernanceCore:
                 or task["run_request_state"] != "claimed"
             ):
                 raise PermissionError("execution_not_active")
+            from ..dynamic_authority import effective_contract
             contract = effective_contract(
                 self.store.authority_store,
                 task_id,
@@ -1576,6 +1577,7 @@ class RuntimeGovernanceCore:
                     canonical = CanonicalEffectRequest.model_validate_json(
                         canonical_row["request_json"]
                     )
+                    from ..dynamic_authority import effective_contract
                     contract = effective_contract(
                         self.store.authority_store,
                         task_id,

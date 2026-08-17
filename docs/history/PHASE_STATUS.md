@@ -1,12 +1,17 @@
 # Astra × Hermes 阶段状态
 
+> **Historical notice:** Superseded as the current implementation-status source
+> by [docs/STATUS.md](../STATUS.md). This file retains its original status
+> report and claims for audit provenance only; it is not current implementation
+> authority.
+
 > **Documentation Governance**
-> - **Role:** Current implementation status register.
+> - **Role:** Historical implementation-status register.
 > - **Authority:** Informational status — non-normative.
 > - **Scope:** Current completion and validation claims, with explicit exclusions.
 > - **Not Responsible For:** Product requirements, architecture, Runtime Design, remediation scope, or acceptance criteria.
 > - **Depends On:** GOVERNANCE.DOCUMENTATION
-> - **Status:** CURRENT; this is the only current phase-status summary.
+> - **Status:** HISTORICAL REFERENCE; superseded by `docs/STATUS.md`.
 
 > 更新日期：2026-08-06
 

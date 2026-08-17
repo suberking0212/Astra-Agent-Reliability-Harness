@@ -8,6 +8,14 @@
 > - **Depends On:** GOVERNANCE.DOCUMENTATION, PRODUCT.CORE, ARCH.HERMES_ASTRA_BOUNDARY, DESIGN.GOVERNANCE.EVIDENCE, DESIGN.RUNTIME.DURABLE_TASK
 > - **Status:** DRAFT REFERENCE — architecture target and planning baseline; not an implementation-completion claim.
 
+> **Current implementation note:** Stage 3A-1 currently proves only Hermes
+> public `post_tool_call` telemetry flowing to a content-free Artifact Action
+> Observation, then session/Task/Attempt/Execution correlation and idempotent
+> persistent evidence. It is not a native Artifact Used Observation and makes
+> no claim about reuse, applied state, stable version, native provenance, Memory
+> snapshot inclusion, or effectiveness. See [docs/STATUS.md](../STATUS.md) for
+> current implementation status.
+
 ## 1. Purpose
 
 This document records the intended **Hermes Self-Improving Loop** exactly by
