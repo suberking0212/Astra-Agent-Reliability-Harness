@@ -17,11 +17,11 @@ current baseline.
 
 | Area | Status | Current implementation and evidence | Limit / missing work |
 | --- | --- | --- | --- |
-| Phase 3/4 Runtime and Governance | PARTIAL | Production Runtime, Governance, Gateway, durable Task/Attempt/Execution, approval, cancellation, evidence, receipts, reconciliation, and recovery paths exist. Frozen semantics remain in `docs/phase3/` and `docs/phase4/`. | The current cross-process restart test fails on a `dynamic_authority` / `phase3.governance` import cycle. Full-suite success is not claimed. |
-| Hermes CLI integration (0.18.2) | PARTIAL | `scripts/start_astra_cli.sh`, the project plugin, Runtime service, and launcher composition exist. Hermes remains the sole conversation loop. | No live external-provider validation. Current semantic CLI E2E is not a passing baseline because the audit observed a hanging Hermes subprocess. |
+| Phase 3/4 Runtime and Governance | PASS | Production Runtime, Governance, Gateway, durable Task/Attempt/Execution, approval, cancellation, evidence, receipts, reconciliation, and recovery paths exist. The cross-process restart import path is covered by the passing baseline. Frozen semantics remain in `docs/phase3/` and `docs/phase4/`. | This is engineering-test validation, not release approval. |
+| Hermes CLI integration (0.18.2) | PARTIAL | `scripts/start_astra_cli.sh`, the project plugin, Runtime service, launcher composition, and semantic CLI E2E pass in the local baseline. Hermes remains the sole conversation loop. | No live external-provider validation. |
 | Parent-session binding and toolset projection | PARTIAL | The launcher attaches `astra_capabilities` through Hermes' invocation-level toolset and verifies the projected schema before entering the parent CLI session. | It is a bounded 0.18.2 integration, not a public Task-to-session execution API. |
 | Semantic Read Broker | PARTIAL | The only model-visible Astra capability is `astra_get_latest_customer_order`; it creates governed internal work and projects a business result with receipt/evidence references. | One read capability only; its end-to-end CLI claim remains limited to local scripted-provider fixtures. |
-| Stage 2A replacement: session correlation | PARTIAL | Astra stores session-to-Task correlation after semantic capability work starts and fails closed on conflict. | Legacy `astra_submit_task` correlation tests no longer match the registered model surface and currently fail; native pause/resume, input/approval handoff, and task context injection remain unavailable. |
+| Stage 2A replacement: session correlation | PASS | Astra stores session-to-Task correlation after semantic capability work starts and fails closed on conflict. Tests cover the current semantic capability surface plus CLI resume/continue lookup behavior. | Native pause/resume, input/approval handoff, and task context injection remain unavailable. |
 | Learning Foundation | PARTIAL | Astra persists content-free Artifact Action Observation records and can correlate session, Task, Attempt, and Execution when a binding exists. | It does not provide native Artifact Used Observation, reuse, applied state, stable Artifact version, native provenance, Memory snapshot inclusion, effectiveness, promotion, rollback, or Artifact lifecycle governance. |
 | Stage 3A-0 public-interface feasibility | PASS | The command API spike established that public command handlers receive raw arguments and cannot implicitly resume an agent turn; ambiguous session binding fails closed. | The result is a NO-GO for implicit agent resume, not a delivery of native continuation. |
 | Stage 3A-1 Artifact Action Observation | PARTIAL | Public `post_tool_call` telemetry is parsed into content-free, idempotent persisted observations and correlated through the Astra store. | It proves only `post_tool_call -> Artifact Action Observation -> correlation -> persisted evidence`; it is not a native Artifact Used Observation. |
@@ -30,9 +30,10 @@ current baseline.
 
 ## Evidence Boundaries
 
-- Current implementation is supported by focused unit and integration tests in
-  `tests/`, but the full suite is not green: the known restart import-cycle
-  failure and a Hermes CLI E2E hang remain blockers.
+- `python -m pytest -q` completed with `167 passed, 2 skipped` in the current
+  baseline. One skip is the retired Runtime-status tool test; the other is the
+  external-provider E2E, which requires explicit `ASTRA_RUN_REAL_PROVIDER_E2E=1`
+  opt-in and credentials.
 - `artifacts/evaluation/` and records under `docs/history/` retain historical,
   scripted-provider evidence only. They do not prove live-model autonomy,
   learning effectiveness, or release readiness.
@@ -41,16 +42,12 @@ current baseline.
 
 ## Current Blockers
 
-1. Repair the Phase 4 cross-process import cycle before making durable-restart claims.
-2. Stabilize and time-bound the semantic Hermes CLI E2E before treating it as current integration evidence.
-3. Replace retired Stage 2A `astra_submit_task` tests with tests of the semantic-capability correlation contract.
-4. Wait for a verifiable Hermes public interface before beginning native learning Artifact integration or a 0.20.0 migration.
+1. Wait for a verifiable Hermes public interface before beginning native learning Artifact integration or a 0.20.0 migration.
 
 ## Next Work
 
-1. Restore a green Runtime test baseline, including restart and CLI E2E paths.
-2. Define and test the semantic session-correlation contract without exposing Runtime mechanics to the model.
-3. Keep Stage 3A-1 as observation-only until Hermes provides native Artifact Used Observation, version, and provenance interfaces.
+1. Keep Stage 3A-1 as observation-only until Hermes provides native Artifact Used Observation, version, and provenance interfaces.
+2. Evaluate the 3A-2 public-interface gate only after the required Hermes interfaces are verifiably available.
 
 ## Navigation
 

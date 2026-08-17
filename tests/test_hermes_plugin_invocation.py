@@ -312,6 +312,27 @@ class _TimedRuntimeHandler(RuntimeHandler):
             })
 
 
+def _run_hermes_e2e(command: list[str], *, env: dict[str, str], timeout: float = 45) -> subprocess.CompletedProcess[str]:
+    """Bound a Hermes CLI E2E and reap every child it starts on timeout."""
+    process = subprocess.Popen(
+        command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate()
+        raise AssertionError(
+            f"Hermes CLI E2E timed out after {timeout}s\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        ) from exc
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 @pytest.mark.skipif(not HERMES.exists(), reason="Hermes test executable is unavailable")
 def test_real_hermes_cli_uses_semantic_broker_for_governed_sandbox_read(tmp_path: Path):
     _BusinessE2EProvider.requests = []
@@ -335,10 +356,9 @@ def test_real_hermes_cli_uses_semantic_broker_for_governed_sandbox_read(tmp_path
     env = {**previous, "HERMES_HOME": str(home), "HERMES_ENABLE_PROJECT_PLUGINS": "true", "ASTRA_RUNTIME_ENDPOINT": f"http://127.0.0.1:{runtime_server.server_port}", "ASTRA_RUNTIME_PLUGIN_AUTH": "runtime-e2e-auth", "PYTHONPATH": str(ROOT)}
     for key in ("ASTRA_BUSINESS_SANDBOX_ENDPOINT", "ASTRA_BUSINESS_SANDBOX_TOKEN", "ASTRA_BUSINESS_COMMERCE_AUTHORITY_DOMAIN", "ASTRA_BUSINESS_SUPPORT_AUTHORITY_DOMAIN"): env.pop(key, None)
     try:
-        completed = subprocess.run(
+        completed = _run_hermes_e2e(
             [str(HERMES.parent / "python"), "-m", "astra.hermes_adapter.launch", str(HERMES),
-             "chat", "-q", "查 cust-s12-s13-001 最近一笔订单状态"],
-            cwd=ROOT, env=env, capture_output=True, text=True, timeout=45, check=False,
+             "chat", "-q", "查 cust-s12-s13-001 最近一笔订单状态"], env=env,
         )
         assert completed.returncode == 0, completed.stdout + completed.stderr
         assert "order-s12-s13-001" in completed.stdout
@@ -593,7 +613,7 @@ def test_parent_session_skill_view_is_observed_and_correlated(tmp_path: Path):
     (home / "config.yaml").write_text(f"model:\n  default: business-e2e-model\n  provider: custom\n  base_url: http://127.0.0.1:{provider.server_port}/v1\n  api_key: e2e\n  api_mode: chat_completions\nplugins:\n  enabled:\n    - astra-runtime\n", encoding="utf-8")
     env = {**previous, "HERMES_HOME": str(home), "HERMES_ENABLE_PROJECT_PLUGINS": "true", "ASTRA_RUNTIME_ENDPOINT": f"http://127.0.0.1:{runtime_server.server_port}", "ASTRA_RUNTIME_PLUGIN_AUTH": "runtime-e2e-auth", "PYTHONPATH": str(ROOT)}
     try:
-        completed = subprocess.run([str(HERMES.parent / "python"), "-m", "astra.hermes_adapter.launch", str(HERMES), "chat", "-q", "check order"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=45, check=False)
+        completed = _run_hermes_e2e([str(HERMES.parent / "python"), "-m", "astra.hermes_adapter.launch", str(HERMES), "chat", "-q", "check order"], env=env)
         assert completed.returncode == 0, completed.stdout + completed.stderr
         store = AstraStore(database)
         try:

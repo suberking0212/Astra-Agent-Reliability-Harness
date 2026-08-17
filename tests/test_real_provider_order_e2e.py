@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import threading
 from pathlib import Path
@@ -23,8 +24,8 @@ HERMES_HOME = Path.home() / ".astra" / "hermes"
 
 
 @pytest.mark.skipif(
-    not HERMES.exists() or not (HERMES_HOME / ".env").exists(),
-    reason="real Hermes Provider credentials are not configured",
+    os.environ.get("ASTRA_RUN_REAL_PROVIDER_E2E") != "1" or not HERMES.exists() or not (HERMES_HOME / ".env").exists(),
+    reason="set ASTRA_RUN_REAL_PROVIDER_E2E=1 with Hermes Provider credentials to run the external-provider E2E",
 )
 def test_real_provider_hermes_native_order_read(tmp_path: Path):
     sandbox_store = SandboxStore(tmp_path / "business.sqlite3")
@@ -54,10 +55,22 @@ def test_real_provider_hermes_native_order_read(tmp_path: Path):
                 "ASTRA_BUSINESS_COMMERCE_AUTHORITY_DOMAIN", "ASTRA_BUSINESS_SUPPORT_AUTHORITY_DOMAIN"):
         env.pop(key, None)
     try:
-        completed = subprocess.run(
-            [str(HERMES), "chat", "-q", "查 cust-s12-s13-001 最近一笔订单状态"],
-            cwd=ROOT, env=env, capture_output=True, text=True, timeout=120, check=False,
-        )
+        command = [str(HERMES), "chat", "-q", "查 cust-s12-s13-001 最近一笔订单状态"]
+        process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            stdout, stderr = process.communicate(timeout=120)
+        except subprocess.TimeoutExpired as exc:
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                stdout, stderr = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                stdout, stderr = process.communicate()
+            raise AssertionError(
+                f"real-provider Hermes E2E timed out after 120s\nstdout:\n{stdout}\nstderr:\n{stderr}"
+            ) from exc
+        completed = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
         assert completed.returncode == 0, completed.stdout + completed.stderr
         assert "order-s12-s13-001" in completed.stdout
         assert "delivered" in completed.stdout

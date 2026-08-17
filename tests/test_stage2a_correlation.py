@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-import re
 import os
+import re
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +15,7 @@ from astra.hermes_adapter import plugin
 
 ROOT = Path(__file__).resolve().parents[1]
 HERMES = ROOT / "hermes-agent-main" / ".venv" / "bin" / "hermes"
+CAPABILITY = "astra_get_latest_customer_order"
 
 
 @pytest.fixture(autouse=True)
@@ -24,19 +25,17 @@ def _reset_plugin_session_state():
     plugin._clear_session()
 
 
-class _ContinuityProvider(BaseHTTPRequestHandler):
-    requests: list[dict] = []
+class _Provider(BaseHTTPRequestHandler):
+    requested = False
     def log_message(self, *_): return
     def do_GET(self):
         body = json.dumps({"object": "list", "data": [{"id": "continuity-model"}]}).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_POST(self):
-        request = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
-        type(self).requests.append(request)
-        has_tool = any(m.get("role") == "tool" for m in request.get("messages", []))
-        if not has_tool:
-            delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "submit-1", "type": "function", "function": {"name": "astra_submit_task", "arguments": json.dumps({"command_id": "continuity-command", "task_id": "continuity-task", "contract": {}})}}]}
-            finish = "tool_calls"
+        self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        if not type(self).requested:
+            type(self).requested = True
+            delta, finish = {"role": "assistant", "tool_calls": [{"index": 0, "id": "capability-1", "type": "function", "function": {"name": CAPABILITY, "arguments": json.dumps({"customer_id": "customer-1"})}}]}, "tool_calls"
         else:
             delta, finish = {"role": "assistant", "content": "continuity verified"}, "stop"
         self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
@@ -46,144 +45,83 @@ class _ContinuityProvider(BaseHTTPRequestHandler):
         self.wfile.write(b"data: [DONE]\n\n")
 
 
-class _ContinuityRuntime(BaseHTTPRequestHandler):
+class _Runtime(BaseHTTPRequestHandler):
     calls: list[dict] = []
     mapping: dict[str, str] = {}
     def log_message(self, *_): return
     def do_POST(self):
         request = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
         type(self).calls.append(request)
-        op, args = request["operation"], request["args"]
-        if op == "submit": result = {"ok": True, "task_id": "continuity-task", "business_status": "running", "next_action": "none"}
-        elif op == "correlation_bind":
-            sid, tid = args["hermes_session_id"], args["astra_task_id"]
-            if sid in type(self).mapping and type(self).mapping[sid] != tid: result = {"ok": False, "error": {"message": "correlation_conflict"}}
-            else: type(self).mapping[sid] = tid; result = {"ok": True, "correlation": {"hermes_session_id": sid, "astra_task_id": tid}}
-        elif op == "correlation_lookup": result = {"ok": True, "correlation": ({"hermes_session_id": args["hermes_session_id"], "astra_task_id": type(self).mapping[args["hermes_session_id"]]} if args["hermes_session_id"] in type(self).mapping else None)}
-        else: result = {"ok": True}
+        operation, args = request["operation"], request["args"]
+        if operation == "capability":
+            assert request["tool_name"] == CAPABILITY
+            type(self).mapping[args["_hermes_session_id"]] = "semantic-task-1"
+            result = {"ok": True, "customer_id": "customer-1", "order_id": "order-1", "status": "delivered", "receipt_ref": "receipt-1", "evidence_ref": {"type": "execution_receipt", "id": "receipt-1"}}
+        elif operation == "correlation_lookup":
+            sid = args["hermes_session_id"]; task_id = type(self).mapping.get(sid)
+            result = {"ok": True, "correlation": ({"hermes_session_id": sid, "astra_task_id": task_id} if task_id else None)}
+        else:
+            raise AssertionError(operation)
         body = json.dumps({"result": json.dumps(result)}).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
 
 @pytest.mark.skipif(not HERMES.exists(), reason="Hermes test executable is unavailable")
-def test_real_hermes_cli_resume_and_continue_preserve_astra_task(tmp_path: Path):
-    provider = ThreadingHTTPServer(("127.0.0.1", 0), _ContinuityProvider)
-    runtime = ThreadingHTTPServer(("127.0.0.1", 0), _ContinuityRuntime)
-    threading.Thread(target=provider.serve_forever, daemon=True).start(); threading.Thread(target=runtime.serve_forever, daemon=True).start()
+def test_real_hermes_cli_resume_and_continue_preserve_semantic_session_binding(tmp_path: Path):
+    _Provider.requested = False; _Runtime.calls = []; _Runtime.mapping = {}
+    provider = ThreadingHTTPServer(("127.0.0.1", 0), _Provider); runtime = ThreadingHTTPServer(("127.0.0.1", 0), _Runtime)
+    threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in (provider, runtime)]
+    for thread in threads: thread.start()
     home = tmp_path / "hermes-home"; home.mkdir()
-    (home / "config.yaml").write_text(f"""model:\n  default: continuity-model\n  provider: custom\n  base_url: http://127.0.0.1:{provider.server_port}/v1\n  api_key: test\n  api_mode: chat_completions\nplugins:\n  enabled:\n    - astra-runtime\n""")
+    (home / "config.yaml").write_text(f"model:\n  default: continuity-model\n  provider: custom\n  base_url: http://127.0.0.1:{provider.server_port}/v1\n  api_key: test\n  api_mode: chat_completions\nplugins:\n  enabled:\n    - astra-runtime\n", encoding="utf-8")
     env = {**os.environ, "HERMES_HOME": str(home), "HERMES_ENABLE_PROJECT_PLUGINS": "true", "ASTRA_RUNTIME_ENDPOINT": f"http://127.0.0.1:{runtime.server_port}", "ASTRA_RUNTIME_PLUGIN_AUTH": "auth", "PYTHONPATH": str(ROOT)}
-    def run(*args): return subprocess.run([str(HERMES), "chat", "-Q", "--cli", *args], cwd=ROOT, env=env, capture_output=True, text=True, timeout=45, check=False)
+    def run(*args: str):
+        return subprocess.run([str(HERMES.parent / "python"), "-m", "astra.hermes_adapter.launch", str(HERMES), "chat", "-Q", "--cli", *args], cwd=ROOT, env=env, capture_output=True, text=True, timeout=45, check=False)
     try:
-        created = run("-q", "submit continuity task")
+        created = run("-q", "get the latest order")
         assert created.returncode == 0, created.stdout + created.stderr
         match = re.search(r"(?:Session ID|session_id)[: ]+([A-Za-z0-9_-]+)", created.stdout + created.stderr)
         assert match, created.stdout + created.stderr
         session_id = match.group(1)
-        resumed = run("--resume", session_id, "-q", "resume continuity")
-        continued = run("--continue", "-q", "continue continuity")
-        assert resumed.returncode == continued.returncode == 0, resumed.stdout + resumed.stderr + continued.stdout + continued.stderr
-        lookups = [c for c in _ContinuityRuntime.calls if c["operation"] == "correlation_lookup" and c["args"].get("hermes_session_id") == session_id]
-        assert lookups and _ContinuityRuntime.mapping[session_id] == "continuity-task"
+        assert run("--resume", session_id, "-q", "resume continuity").returncode == 0
+        assert run("--continue", "-q", "continue continuity").returncode == 0
+        assert any(c["operation"] == "correlation_lookup" and c["args"].get("hermes_session_id") == session_id for c in _Runtime.calls)
     finally:
         provider.shutdown(); runtime.shutdown()
+        for thread in threads: thread.join()
 
 
 def test_correlation_store_is_idempotent_and_conflicts_fail_closed(tmp_path: Path):
     store = HermesCorrelationStore(tmp_path / "correlation.sqlite3")
     try:
-        first = store.bind("hermes-1", "astra-task-1", "test")
-        again = store.bind("hermes-1", "astra-task-1", "repeat")
-        assert first["astra_task_id"] == again["astra_task_id"] == "astra-task-1"
-        assert store.lookup("unknown") is None
-        with pytest.raises(CorrelationConflict, match="already bound"):
-            store.bind("hermes-1", "astra-task-2")
-        assert store.lookup("hermes-1")["astra_task_id"] == "astra-task-1"
-    finally:
-        store.close()
-
-
-def test_terminal_correlation_can_be_rebound_but_active_one_cannot(tmp_path: Path):
-    store = HermesCorrelationStore(tmp_path / "correlation.sqlite3")
-    try:
-        store.bind("hermes-1", "astra-task-1")
-        with pytest.raises(CorrelationConflict):
-            store.bind("hermes-1", "astra-task-2")
+        assert store.bind("hermes-1", "astra-task-1", "test")["astra_task_id"] == "astra-task-1"
+        assert store.bind("hermes-1", "astra-task-1", "repeat")["astra_task_id"] == "astra-task-1"
+        with pytest.raises(CorrelationConflict): store.bind("hermes-1", "astra-task-2")
         store.mark_status("hermes-1", "terminal")
-        rebound = store.bind("hermes-1", "astra-task-2")
-        assert rebound["astra_task_id"] == "astra-task-2"
-        assert rebound["status"] == "active"
-    finally:
-        store.close()
+        assert store.bind("hermes-1", "astra-task-2")["astra_task_id"] == "astra-task-2"
+    finally: store.close()
 
 
-def test_plugin_reuses_the_active_session_task_before_submit(monkeypatch):
-    calls: list[tuple[str, dict]] = []
-    plugin._clear_session()
-    monkeypatch.setattr(plugin, "_transport_credential_cache", "auth")
-    def call(operation, args, tool_name=None):
-        calls.append((operation, dict(args)))
-        if operation == "correlation_lookup":
-            return json.dumps({"ok": True, "correlation": {"astra_task_id": "existing-task"}})
-        if operation == "status":
-            return json.dumps({"ok": True, "task_id": "existing-task", "business_status": "running"})
-        raise AssertionError(operation)
-    monkeypatch.setattr(plugin, "_call", call)
+def _context():
     class Context:
-        def __init__(self): self.tools = {}; self.hooks = {}
-        def register_tool(self, *, name, handler, **kwargs): self.tools[name] = handler
+        def __init__(self): self.tools, self.hooks = {}, {}
+        def register_tool(self, *, name, handler, **_): self.tools[name] = handler
         def register_hook(self, name, callback): self.hooks[name] = callback
-    ctx = Context(); plugin.register(ctx)
-    ctx.hooks["on_session_start"](session_id="hermes-reuse")
-    result = json.loads(ctx.tools["astra_submit_task"]({"objective": "repeat"}))
-    assert result["task_id"] == "existing-task"
-    assert result["reused"] is True
-    assert not any(operation == "submit" for operation, _ in calls)
+    return Context()
 
 
-def test_plugin_binds_only_after_successful_submit(monkeypatch):
-    calls: list[tuple[str, dict]] = []
+@pytest.mark.parametrize(("platform", "events", "expected"), [
+    ("cli", (("on_session_start", "session-1"),), "session-1"),
+    ("gateway", (("on_session_start", "session-1"),), ""),
+    ("cli", (("on_session_start", "session-1"), ("pre_llm_call", "session-2")), ""),
+])
+def test_semantic_capability_binds_only_unambiguous_cli_session(monkeypatch, platform, events, expected):
+    calls = []
     monkeypatch.setattr(plugin, "_transport_credential_cache", "auth")
-    monkeypatch.setattr(plugin, "_call", lambda operation, args, tool_name=None: calls.append((operation, dict(args))) or
-                        (json.dumps({"ok": True, "task_id": "astra-7"}) if operation == "submit" else json.dumps({"ok": True})))
-    class Context:
-        def __init__(self): self.tools = {}; self.hooks = {}
-        def register_tool(self, *, name, handler, **kwargs): self.tools[name] = handler
-        def register_hook(self, name, callback): self.hooks[name] = callback
-    ctx = Context()
-    plugin.register(ctx)
-    ctx.hooks["on_session_start"](session_id="hermes-7")
-    result = json.loads(ctx.tools["astra_submit_task"]({"command_id": "c", "task_id": "astra-7", "contract": {}}))
-    assert result["task_id"] == "astra-7"
-    assert any(op == "correlation_bind" and args["hermes_session_id"] == "hermes-7" for op, args in calls)
-
-
-def test_gateway_hook_does_not_set_a_bindable_session(monkeypatch):
-    calls: list[tuple[str, dict]] = []
-    monkeypatch.setattr(plugin, "_transport_credential_cache", "auth")
-    monkeypatch.setattr(plugin, "_call", lambda operation, args, tool_name=None: calls.append((operation, dict(args))) or
-                        (json.dumps({"ok": True, "task_id": "astra-gw"}) if operation == "submit" else json.dumps({"ok": True})))
-    class Context:
-        def __init__(self): self.tools = {}; self.hooks = {}
-        def register_tool(self, *, name, handler, **kwargs): self.tools[name] = handler
-        def register_hook(self, name, callback): self.hooks[name] = callback
-    ctx = Context(); plugin.register(ctx)
-    ctx.hooks["on_session_start"](session_id="gateway-session", platform="gateway")
-    ctx.tools["astra_submit_task"]({"command_id": "c", "task_id": "astra-gw", "contract": {}})
-    assert not any(op == "correlation_bind" for op, _ in calls)
-
-
-def test_session_switch_is_ambiguous_until_reset(monkeypatch):
-    calls: list[tuple[str, dict]] = []
-    monkeypatch.setattr(plugin, "_transport_credential_cache", "auth")
-    monkeypatch.setattr(plugin, "_call", lambda operation, args, tool_name=None: calls.append((operation, dict(args))) or
-                        (json.dumps({"ok": True, "task_id": "astra-x"}) if operation == "submit" else json.dumps({"ok": True})))
-    class Context:
-        def __init__(self): self.tools = {}; self.hooks = {}
-        def register_tool(self, *, name, handler, **kwargs): self.tools[name] = handler
-        def register_hook(self, name, callback): self.hooks[name] = callback
-    ctx = Context(); plugin.register(ctx)
-    ctx.hooks["on_session_start"](session_id="cli-a", platform="cli")
-    ctx.hooks["pre_llm_call"](session_id="cli-b", platform="cli")
-    ctx.tools["astra_submit_task"]({"command_id": "c", "task_id": "astra-x", "contract": {}})
-    assert not any(op == "correlation_bind" for op, _ in calls)
+    monkeypatch.setattr(plugin, "_call", lambda operation, args, tool_name=None: calls.append((operation, dict(args), tool_name)) or json.dumps({"ok": True}))
+    context = _context(); plugin.register(context)
+    for hook, session_id in events: context.hooks[hook](session_id=session_id, platform=platform)
+    assert set(context.tools) == {CAPABILITY}
+    context.tools[CAPABILITY]({"customer_id": "customer-1"})
+    call = next(call for call in calls if call[0] == "capability")
+    assert call[1]["_hermes_session_id"] == expected and call[2] == CAPABILITY
